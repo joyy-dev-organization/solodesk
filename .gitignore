@@ -1,0 +1,45 @@
+# Flutter / Dart
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/build/
+app/windows/flutter/ephemeral/
+app/.pub-cache/
+app/.pub/
+
+# Node / TypeScript
+service/node_modules/
+service/dist/
+service/npm-debug.log*
+service/yarn-debug.log*
+service/yarn-error.log*
+
+# Environment and runtime secrets
+.env
+.env.*
+!.env.example
+*.token
+*.key
+*.pem
+*.secret
+
+# Local databases and client data
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs and transcripts
+*.log
+logs/
+*.jsonl
+
+# Operating System & IDE
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
