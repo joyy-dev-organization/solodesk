@@ -1,5 +1,6 @@
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../models/project.dart';
+import '../models/scope_version.dart';
 
 abstract class IProjectRepository {
   Future<List<Project>> getProjects({String? clientId, bool includeSynthetic = true});
@@ -66,10 +67,19 @@ class ProjectRepository implements IProjectRepository {
 
   @override
   Future<void> deleteProject(String id) async {
-    await db.delete(
-      'projects',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    try {
+      await db.delete(
+        'projects',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    } on DatabaseException catch (e) {
+      if (e.toString().contains('IMMUTABILITY_VIOLATION')) {
+        throw const ScopeImmutabilityException(
+          'Cannot delete project because it has an approved, immutable scope version.',
+        );
+      }
+      rethrow;
+    }
   }
 }

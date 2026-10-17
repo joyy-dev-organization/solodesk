@@ -33,9 +33,14 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
     {'code': 'EUR', 'label': 'EUR — Euro (€)'},
     {'code': 'GBP', 'label': 'GBP — British pound (£)'},
     {'code': 'GHS', 'label': 'GHS — Ghanaian cedi (GH₵)'},
+    {'code': 'CAD', 'label': 'CAD — Canadian dollar (CA\$)'},
+    {'code': 'AUD', 'label': 'AUD — Australian dollar (A\$)'},
+    {'code': 'KES', 'label': 'KES — Kenyan shilling (KSh)'},
+    {'code': 'ZAR', 'label': 'ZAR — South African rand (R)'},
   ];
 
   late TextEditingController _businessNameController;
+  late TextEditingController _customNicheController;
   final Set<String> _selectedNiches = {};
   String _defaultCurrency = 'NGN';
   bool _isLoading = false;
@@ -44,12 +49,14 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
   void initState() {
     super.initState();
     _businessNameController = TextEditingController();
+    _customNicheController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPreferences());
   }
 
   @override
   void dispose() {
     _businessNameController.dispose();
+    _customNicheController.dispose();
     super.dispose();
   }
 
@@ -60,7 +67,14 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
     if (mounted) {
       setState(() {
         _selectedNiches.clear();
-        _selectedNiches.addAll(prefs.niches);
+        for (final n in prefs.niches) {
+          if (allNiches.contains(n)) {
+            _selectedNiches.add(n);
+          } else {
+            _selectedNiches.add('Other');
+            _customNicheController.text = n;
+          }
+        }
         _defaultCurrency = prefs.defaultCurrency;
         _businessNameController.text = prefs.businessName;
         _isLoading = false;
@@ -77,12 +91,18 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
     }
 
     final repo = RepositoryScope.of(context).preferenceRepo;
+    final savedNiches = _selectedNiches.toList();
+    final customNiche = _customNicheController.text.trim();
+    if (_selectedNiches.contains('Other') && customNiche.isNotEmpty && !savedNiches.contains(customNiche)) {
+      savedNiches.add(customNiche);
+    }
+
     final updated = ServicePreference(
       id: 'default',
-      niches: _selectedNiches.toList(),
+      niches: savedNiches,
       defaultCurrency: _defaultCurrency,
       businessName: _businessNameController.text.trim().isEmpty
-          ? 'Joyce Ava · Independent freelancer'
+          ? 'ladydiamond · Independent freelancer'
           : _businessNameController.text.trim(),
       createdAt: DateTime.now().toUtc(),
       updatedAt: DateTime.now().toUtc(),
@@ -92,7 +112,7 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Saved ${_selectedNiches.length} service categories and $_defaultCurrency currency to local database.'),
+          content: Text('Saved ${savedNiches.length} service categories and $_defaultCurrency currency to local database.'),
           backgroundColor: SoloDeskColors.green,
         ),
       );
@@ -224,6 +244,17 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
                         }).toList(),
                       ),
 
+                      if (_selectedNiches.contains('Other')) ...[
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: _customNicheController,
+                          decoration: const InputDecoration(
+                            labelText: 'Custom service category',
+                            hintText: 'e.g. Podcast Production & Audio Editing',
+                          ),
+                        ),
+                      ],
+
                       const SizedBox(height: 24),
                       const Divider(),
                       const SizedBox(height: 20),
@@ -284,7 +315,7 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
                       TextField(
                         controller: _businessNameController,
                         decoration: const InputDecoration(
-                          hintText: 'e.g. Joyce Ava · Independent freelancer',
+                          hintText: 'e.g. ladydiamond · Independent freelancer',
                         ),
                       ),
                     ],

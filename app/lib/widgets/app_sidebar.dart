@@ -10,12 +10,12 @@ class AppSidebar extends StatelessWidget {
     super.key,
     required this.selectedIndex,
     required this.onSelect,
-    this.businessName = 'Joyce Ava',
+    this.businessName = 'ladydiamond',
   });
 
   String _getInitials(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty || parts[0].isEmpty) return 'JA';
+    if (parts.isEmpty || parts[0].isEmpty) return 'LD';
     if (parts.length == 1) {
       return parts[0].substring(0, parts[0].length >= 2 ? 2 : 1).toUpperCase();
     }

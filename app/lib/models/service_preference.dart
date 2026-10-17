@@ -25,7 +25,7 @@ class ServicePreference {
       id: 'default',
       niches: const ['Design & branding', 'Writing & content'],
       defaultCurrency: 'NGN',
-      businessName: 'Joyce Ava · Independent freelancer',
+      businessName: 'ladydiamond · Independent freelancer',
       createdAt: now,
       updatedAt: now,
     );

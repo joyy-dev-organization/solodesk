@@ -83,3 +83,11 @@ class ScopeVersionWithItems {
     required this.items,
   });
 }
+
+class ScopeImmutabilityException implements Exception {
+  final String message;
+  const ScopeImmutabilityException(this.message);
+
+  @override
+  String toString() => message;
+}

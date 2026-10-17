@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../db/repository_scope.dart';
 import '../models/client.dart';
 import '../models/project.dart';
+import '../models/money.dart';
 import '../theme/colors.dart';
 import '../widgets/stat_card.dart';
 
@@ -24,6 +25,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
   int _activeProjectsCount = 0;
   int _totalClientsCount = 0;
   int _approvedScopesCount = 0;
+  int _unpaidInvoicesCount = 0;
   List<Project> _recentProjects = [];
   Map<String, Client> _clientMap = {};
   bool _isLoading = false;
@@ -62,6 +64,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
         _activeProjectsCount = metrics.activeProjects;
         _totalClientsCount = metrics.totalClients;
         _approvedScopesCount = metrics.approvedScopes;
+        _unpaidInvoicesCount = metrics.unpaidInvoices;
         _recentProjects = projects.take(5).toList();
         _clientMap = map;
         _isLoading = false;
@@ -159,6 +162,348 @@ class _OverviewScreenState extends State<OverviewScreen> {
     );
   }
 
+  void _showEditClientDialog(Client client) {
+    final nameController = TextEditingController(text: client.name);
+    final companyController = TextEditingController(text: client.company ?? '');
+    final emailController = TextEditingController(text: client.email ?? '');
+    final notesController = TextEditingController(text: client.notes ?? '');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Client'),
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Client or Contact Name *'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: companyController,
+                decoration: const InputDecoration(labelText: 'Company / Brand (Optional)'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: emailController,
+                decoration: const InputDecoration(labelText: 'Email Address (Optional)'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: notesController,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: 'Notes (Optional)'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              final repo = RepositoryScope.of(context).clientRepo;
+              final updated = client.copyWith(
+                name: name,
+                company: companyController.text.trim().isEmpty ? null : companyController.text.trim(),
+                email: emailController.text.trim().isEmpty ? null : emailController.text.trim(),
+                notes: notesController.text.trim().isEmpty ? null : notesController.text.trim(),
+              );
+              await repo.updateClient(updated);
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (mounted) loadData();
+            },
+            child: const Text('Update Client'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteClient(Client client) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete ${client.name}?'),
+        content: const Text(
+          'Are you sure you want to delete this client? If they have approved scopes, deletion will be blocked by SQLite immutability rules.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: SoloDeskColors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    try {
+      final repo = RepositoryScope.of(context).clientRepo;
+      await repo.deleteClient(client.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Client ${client.name} deleted.')),
+        );
+        loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: SoloDeskColors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showAddProjectDialog() async {
+    final repoScope = RepositoryScope.of(context);
+    final clients = await repoScope.clientRepo.getClients(includeSynthetic: widget.isSyntheticDemoActive);
+    if (clients.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please add a client before creating a project.')),
+      );
+      _showAddClientDialog();
+      return;
+    }
+
+    final nameController = TextEditingController();
+    final budgetController = TextEditingController(text: '150000');
+    String selectedClientId = clients.first.id;
+    String selectedNiche = 'Design & branding';
+    String selectedStatus = 'active';
+
+    final prefs = await repoScope.preferenceRepo.getPreferences();
+    final niches = prefs.niches.isNotEmpty ? prefs.niches : const ['Design & branding', 'Writing & content'];
+    if (!niches.contains(selectedNiche)) {
+      selectedNiche = niches.first;
+    }
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+          title: const Text('Add Project'),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Project Name *',
+                    hintText: 'e.g. Brand Identity Package',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedClientId,
+                  decoration: const InputDecoration(labelText: 'Client *'),
+                  items: clients.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                  onChanged: (val) {
+                    if (val != null) setDialogState(() => selectedClientId = val);
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedNiche,
+                  decoration: const InputDecoration(labelText: 'Service Category *'),
+                  items: niches.map((n) => DropdownMenuItem(value: n, child: Text(n))).toList(),
+                  onChanged: (val) {
+                    if (val != null) setDialogState(() => selectedNiche = val);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: budgetController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Budget (${prefs.defaultCurrency}) *',
+                    hintText: 'e.g. 150000',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                if (name.isEmpty) return;
+
+                final rawBudget = double.tryParse(budgetController.text.trim()) ?? 0.0;
+                final minorUnits = (rawBudget * 100).round();
+                final budget = Money(minorUnits: minorUnits, currency: prefs.defaultCurrency);
+                final now = DateTime.now().toUtc();
+
+                final project = Project(
+                  id: const Uuid().v4(),
+                  clientId: selectedClientId,
+                  name: name,
+                  niche: selectedNiche,
+                  budget: budget,
+                  status: selectedStatus,
+                  isSynthetic: false,
+                  createdAt: now,
+                  updatedAt: now,
+                );
+
+                await repoScope.projectRepo.createProject(project);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) loadData();
+              },
+              child: const Text('Save Project'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditProjectDialog(Project proj) async {
+    final nameController = TextEditingController(text: proj.name);
+    final budgetController = TextEditingController(text: proj.budget.toMajorUnits().toStringAsFixed(0));
+    String selectedStatus = proj.status;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+          title: Text('Edit ${proj.name}'),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Project Name *'),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedStatus,
+                  decoration: const InputDecoration(labelText: 'Status *'),
+                  items: const [
+                    DropdownMenuItem(value: 'lead', child: Text('Lead')),
+                    DropdownMenuItem(value: 'drafting', child: Text('Drafting')),
+                    DropdownMenuItem(value: 'active', child: Text('Active')),
+                    DropdownMenuItem(value: 'completed', child: Text('Completed')),
+                    DropdownMenuItem(value: 'archived', child: Text('Archived')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setDialogState(() => selectedStatus = val);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: budgetController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Budget (${proj.budget.currency}) *',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                if (name.isEmpty) return;
+                final rawBudget = double.tryParse(budgetController.text.trim()) ?? 0.0;
+                final minorUnits = (rawBudget * 100).round();
+                final budget = Money(minorUnits: minorUnits, currency: proj.budget.currency);
+
+                final updated = proj.copyWith(
+                  name: name,
+                  status: selectedStatus,
+                  budget: budget,
+                );
+
+                final repo = RepositoryScope.of(context).projectRepo;
+                await repo.updateProject(updated);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) loadData();
+              },
+              child: const Text('Update Project'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteProject(Project proj) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete ${proj.name}?'),
+        content: const Text(
+          'Are you sure you want to delete this project? If it has an approved scope version, deletion will be blocked by SQLite immutability rules.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: SoloDeskColors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    try {
+      final repo = RepositoryScope.of(context).projectRepo;
+      await repo.deleteProject(proj.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Project ${proj.name} deleted.')),
+        );
+        loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: SoloDeskColors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -210,9 +555,15 @@ class _OverviewScreenState extends State<OverviewScreen> {
                   OutlinedButton.icon(
                     onPressed: _showAddClientDialog,
                     icon: const Icon(Icons.person_add_outlined, size: 16),
-                    label: const Text('＋ Add a client'),
+                    label: const Text('＋ Add client'),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _showAddProjectDialog,
+                    icon: const Icon(Icons.create_new_folder_outlined, size: 16),
+                    label: const Text('＋ Add project'),
+                  ),
+                  const SizedBox(width: 8),
                   ElevatedButton.icon(
                     onPressed: () => widget.onNavigate(2), // BriefCheck
                     icon: const Icon(Icons.auto_awesome, size: 16),
@@ -261,11 +612,11 @@ class _OverviewScreenState extends State<OverviewScreen> {
                 ),
               ),
               const SizedBox(width: 14),
-              const Expanded(
+              Expanded(
                 child: StatCard(
                   label: 'Invoices due',
-                  value: '00',
-                  note: 'PolitePay planned in M5',
+                  value: _unpaidInvoicesCount.toString().padLeft(2, '0'),
+                  note: widget.isSyntheticDemoActive ? 'Includes demo invoices' : 'Unpaid in SQLite',
                   icon: Icons.attach_money_outlined,
                   iconColor: SoloDeskColors.amber,
                   iconBgColor: SoloDeskColors.amberBg,
@@ -364,23 +715,25 @@ class _OverviewScreenState extends State<OverviewScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Client work',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w800,
-                                  color: SoloDeskColors.ink,
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Client work',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: SoloDeskColors.ink,
+                                  ),
                                 ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'Projects and agreements saved to your device.',
-                                style: TextStyle(fontSize: 11, color: SoloDeskColors.muted),
-                              ),
-                            ],
+                                SizedBox(height: 2),
+                                Text(
+                                  'Projects and agreements saved to your device.',
+                                  style: TextStyle(fontSize: 11, color: SoloDeskColors.muted),
+                                ),
+                              ],
+                            ),
                           ),
                           if (_recentProjects.isNotEmpty)
                             TextButton(
@@ -484,7 +837,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: const Text(
-                                        'DEMO',
+                                        'DEMO RECORD',
                                         style: TextStyle(
                                           color: SoloDeskColors.primary,
                                           fontSize: 9,
@@ -507,10 +860,46 @@ class _OverviewScreenState extends State<OverviewScreen> {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 8),
                                   TextButton(
                                     onPressed: () => widget.onNavigate(3), // ScopeShield
                                     child: const Text('Review Scope'),
+                                  ),
+                                  PopupMenuButton<String>(
+                                    tooltip: 'Project actions',
+                                    icon: const Icon(Icons.more_vert, size: 18),
+                                    onSelected: (action) {
+                                      if (action == 'edit_proj') {
+                                        _showEditProjectDialog(proj);
+                                      } else if (action == 'del_proj') {
+                                        _confirmDeleteProject(proj);
+                                      } else if (action == 'edit_client' && client != null) {
+                                        _showEditClientDialog(client);
+                                      } else if (action == 'del_client' && client != null) {
+                                        _confirmDeleteClient(client);
+                                      }
+                                    },
+                                    itemBuilder: (ctx) => [
+                                      const PopupMenuItem(
+                                        value: 'edit_proj',
+                                        child: Text('Edit project'),
+                                      ),
+                                      if (client != null)
+                                        const PopupMenuItem(
+                                          value: 'edit_client',
+                                          child: Text('Edit client'),
+                                        ),
+                                      const PopupMenuDivider(),
+                                      const PopupMenuItem(
+                                        value: 'del_proj',
+                                        child: Text('Delete project', style: TextStyle(color: SoloDeskColors.red)),
+                                      ),
+                                      if (client != null)
+                                        const PopupMenuItem(
+                                          value: 'del_client',
+                                          child: Text('Delete client', style: TextStyle(color: SoloDeskColors.red)),
+                                        ),
+                                    ],
                                   ),
                                 ],
                               ),

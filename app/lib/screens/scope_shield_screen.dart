@@ -41,6 +41,7 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
 
   List<Project> _projects = [];
   Project? _selectedProject;
+  List<ScopeVersionWithItems> _projectApprovedScopes = [];
   ScopeVersionWithItems? _currentScope;
   bool _isLoadingProjects = true;
 
@@ -94,15 +95,19 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
     // Filter projects that have approved scope versions
     final validProjects = <Project>[];
     Project? firstValidProject;
-    ScopeVersionWithItems? firstScope;
+    final firstScopes = <ScopeVersionWithItems>[];
 
     for (final p in allProjects) {
-      final approved = await scope.scopeRepo.getLatestApprovedVersion(p.id);
-      if (approved != null && approved.version.isApproved) {
+      final allVersions = await scope.scopeRepo.getVersionsForProject(p.id);
+      final approved = allVersions.where((v) => v.isApproved).toList();
+      if (approved.isNotEmpty) {
         validProjects.add(p);
         if (firstValidProject == null) {
           firstValidProject = p;
-          firstScope = approved;
+          for (final v in approved) {
+            final full = await scope.scopeRepo.getVersionWithItems(v.id);
+            if (full != null) firstScopes.add(full);
+          }
         }
       }
     }
@@ -111,7 +116,8 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
       setState(() {
         _projects = validProjects;
         _selectedProject = firstValidProject;
-        _currentScope = firstScope;
+        _projectApprovedScopes = firstScopes;
+        _currentScope = firstScopes.isNotEmpty ? firstScopes.last : null;
         _isLoadingProjects = false;
       });
     }
@@ -119,10 +125,18 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
 
   Future<void> _loadScopeForProject(String projectId) async {
     final scope = RepositoryScope.of(context);
-    final approved = await scope.scopeRepo.getLatestApprovedVersion(projectId);
+    final allVersions = await scope.scopeRepo.getVersionsForProject(projectId);
+    final approved = allVersions.where((v) => v.isApproved).toList();
+    final fullScopes = <ScopeVersionWithItems>[];
+    for (final v in approved) {
+      final full = await scope.scopeRepo.getVersionWithItems(v.id);
+      if (full != null) fullScopes.add(full);
+    }
+
     if (mounted) {
       setState(() {
-        _currentScope = approved;
+        _projectApprovedScopes = fullScopes;
+        _currentScope = fullScopes.isNotEmpty ? fullScopes.last : null;
       });
     }
   }
@@ -808,7 +822,35 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
                               items: _projects.map((p) {
                                 return DropdownMenuItem(
                                   value: p,
-                                  child: Text('${p.name} (${p.niche})'),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          '${p.name} (${p.niche})',
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (p.isSynthetic) ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF1F5F9),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                                          ),
+                                          child: const Text(
+                                            'DEMO RECORD',
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w700,
+                                              color: Color(0xFF475569),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                 );
                               }).toList(),
                               onChanged: isAnalyzing
@@ -822,6 +864,38 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
                             ),
                           ),
                         ),
+
+                        if (_projectApprovedScopes.length > 1) ...[
+                          const SizedBox(height: 12),
+                          const Text('Approved Scope Version', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: SoloDeskColors.borderLine),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<ScopeVersionWithItems>(
+                                value: _currentScope,
+                                isExpanded: true,
+                                items: _projectApprovedScopes.map((s) {
+                                  return DropdownMenuItem(
+                                    value: s,
+                                    child: Text('Version ${s.version.versionNumber}: ${s.version.title} (${s.items.length} deliverables)'),
+                                  );
+                                }).toList(),
+                                onChanged: isAnalyzing
+                                    ? null
+                                    : (val) {
+                                        if (val != null) {
+                                          setState(() => _currentScope = val);
+                                        }
+                                      },
+                              ),
+                            ),
+                          ),
+                        ],
 
                         const SizedBox(height: 16),
 

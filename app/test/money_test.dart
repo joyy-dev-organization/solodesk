@@ -6,13 +6,16 @@ void main() {
     test('formats amounts correctly for known currencies', () {
       const m1 = Money(minorUnits: 150000, currency: 'USD');
       expect(m1.format(), equals('\$1500.00'));
+      expect(m1.formattedGrouped, equals('\$1,500.00'));
       expect(m1.toMajorUnits(), equals(1500.0));
 
       const m2 = Money(minorUnits: 48500000, currency: 'NGN');
       expect(m2.format(), equals('₦485000.00'));
+      expect(m2.formattedGrouped, equals('₦485,000.00'));
 
       const m3 = Money(minorUnits: 99, currency: 'EUR');
       expect(m3.format(), equals('€0.99'));
+      expect(m3.formattedGrouped, equals('€0.99'));
     });
 
     test('adds money with the same currency', () {

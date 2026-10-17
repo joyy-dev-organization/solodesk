@@ -167,6 +167,19 @@ void main() {
           contains('IMMUTABILITY_VIOLATION'),
         )),
       );
+
+      // 6. Attempting to bypass immutability with is_synthetic = 1 on real approved scope must also fail
+      expect(
+        () => dbService.db.rawInsert(
+          'INSERT INTO scope_items (id, scope_version_id, category, description, is_synthetic) VALUES (?, ?, ?, ?, ?)',
+          ['extra-item-synthetic-bypass', draft.version.id, 'included', 'Rogue bypass deliverable', 1],
+        ),
+        throwsA(isA<DatabaseException>().having(
+          (e) => e.toString(),
+          'message',
+          contains('IMMUTABILITY_VIOLATION'),
+        )),
+      );
     });
 
     test('branching an approved version creates a clean new draft version 2', () async {

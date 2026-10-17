@@ -24,15 +24,20 @@ class DatabaseService {
   }
 
   /// Open database at a specific file path (used for restart persistence tests)
-  static Future<DatabaseService> openPath(String path) async {
+  static Future<DatabaseService> openPath(String path, {int version = currentSchemaVersion}) async {
     final db = await databaseFactoryFfi.openDatabase(
       path,
       options: OpenDatabaseOptions(
         singleInstance: path != inMemoryDatabasePath,
-        version: currentSchemaVersion,
+        version: version,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON;');
+          if (path != inMemoryDatabasePath) {
+            await db.execute('PRAGMA journal_mode = WAL;');
+            await db.execute('PRAGMA busy_timeout = 5000;');
+          }
         },
+        onDowngrade: onDatabaseDowngradeDelete,
         onCreate: (db, version) async {
           await _applyMigrations(db, 0, version);
         },
@@ -92,7 +97,7 @@ class DatabaseService {
     final prefNow = DateTime.now().toUtc().toIso8601String();
     await db.rawInsert('''
       INSERT INTO service_preferences (id, niches_json, default_currency, business_name, created_at, updated_at)
-      VALUES ('default', '["Design & branding","Writing & content"]', 'NGN', 'Joyce Ava · Independent freelancer', ?, ?)
+      VALUES ('default', '["Design & branding","Writing & content"]', 'NGN', 'ladydiamond · Independent freelancer', ?, ?)
     ''', [prefNow, prefNow]);
 
     // 3. Clients
@@ -188,7 +193,7 @@ class DatabaseService {
       BEFORE UPDATE ON scope_items
       FOR EACH ROW
       WHEN (SELECT status FROM scope_versions WHERE id = OLD.scope_version_id) = 'approved'
-        AND OLD.is_synthetic = 0
+        AND (SELECT is_synthetic FROM scope_versions WHERE id = OLD.scope_version_id) = 0
       BEGIN
         SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Cannot modify items under an approved scope version.');
       END;
@@ -199,7 +204,7 @@ class DatabaseService {
       BEFORE DELETE ON scope_items
       FOR EACH ROW
       WHEN (SELECT status FROM scope_versions WHERE id = OLD.scope_version_id) = 'approved'
-        AND OLD.is_synthetic = 0
+        AND (SELECT is_synthetic FROM scope_versions WHERE id = OLD.scope_version_id) = 0
       BEGIN
         SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Cannot delete items under an approved scope version.');
       END;
@@ -210,7 +215,7 @@ class DatabaseService {
       BEFORE INSERT ON scope_items
       FOR EACH ROW
       WHEN (SELECT status FROM scope_versions WHERE id = NEW.scope_version_id) = 'approved'
-        AND NEW.is_synthetic = 0
+        AND (SELECT is_synthetic FROM scope_versions WHERE id = NEW.scope_version_id) = 0
       BEGIN
         SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Cannot add items to an already approved scope version.');
       END;

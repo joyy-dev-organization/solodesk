@@ -98,6 +98,8 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
     super.dispose();
   }
 
+  String _defaultCurrency = 'USD';
+
   Future<void> _loadPreferences() async {
     if (!mounted) return;
     try {
@@ -106,6 +108,7 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
       if (mounted) {
         setState(() {
           _userNiches = prefs.niches;
+          _defaultCurrency = prefs.defaultCurrency;
           if (!_userNiches.contains(_selectedNiche) && _userNiches.isNotEmpty) {
             _selectedNiche = _userNiches.first;
           }
@@ -413,6 +416,9 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
     final projectTitleController = TextEditingController(
       text: _extractProjectTitleCandidate(),
     );
+    final budgetController = TextEditingController(
+      text: '1500',
+    );
 
     showDialog(
       context: context,
@@ -443,6 +449,15 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
                   labelText: 'Project Title *',
                   hintText: 'e.g. Brand Identity & Assets',
                 ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: budgetController,
+                decoration: InputDecoration(
+                  labelText: 'Project Budget ($_defaultCurrency)',
+                  hintText: 'e.g. 1500.00',
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
               ),
               const SizedBox(height: 16),
               Text(
@@ -481,6 +496,11 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
               final clientId = const Uuid().v4();
               final projectId = const Uuid().v4();
 
+              // Parse user budget into minor units (e.g. cents/kobo)
+              final rawBudget = budgetController.text.trim().replaceAll(',', '');
+              final doubleVal = double.tryParse(rawBudget) ?? 1500.0;
+              final minorUnits = (doubleVal * 100).round();
+
               // 1. Create client
               await scope.clientRepo.createClient(Client(
                 id: clientId,
@@ -497,7 +517,7 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
                 clientId: clientId,
                 name: projectTitle,
                 niche: _selectedNiche,
-                budget: Money(minorUnits: 15000000, currency: prefs.defaultCurrency),
+                budget: Money(minorUnits: minorUnits, currency: prefs.defaultCurrency),
                 status: 'active',
                 createdAt: now,
                 updatedAt: now,

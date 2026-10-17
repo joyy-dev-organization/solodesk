@@ -48,8 +48,22 @@ class Money {
     return (d * 100).round();
   }
 
-  String format() {
-    final major = (minorUnits ~/ 100).toString();
+  static String _groupThousands(int value) {
+    final str = value.toString();
+    final buffer = StringBuffer();
+    final len = str.length;
+    for (int i = 0; i < len; i++) {
+      if (i > 0 && (len - i) % 3 == 0) {
+        buffer.write(',');
+      }
+      buffer.write(str[i]);
+    }
+    return buffer.toString();
+  }
+
+  String format({bool groupThousands = false}) {
+    final majorInt = minorUnits ~/ 100;
+    final major = groupThousands ? _groupThousands(majorInt) : majorInt.toString();
     final minor = (minorUnits % 100).toString().padLeft(2, '0');
     switch (currency.toUpperCase()) {
       case 'USD':
@@ -66,6 +80,8 @@ class Money {
         return '$currency $major.$minor';
     }
   }
+
+  String get formattedGrouped => format(groupThousands: true);
 
   @override
   bool operator ==(Object other) =>

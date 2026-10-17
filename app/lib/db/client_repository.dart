@@ -1,5 +1,6 @@
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../models/client.dart';
+import '../models/scope_version.dart';
 
 abstract class IClientRepository {
   Future<List<Client>> getClients({bool includeSynthetic = true});
@@ -52,10 +53,19 @@ class ClientRepository implements IClientRepository {
 
   @override
   Future<void> deleteClient(String id) async {
-    await db.delete(
-      'clients',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    try {
+      await db.delete(
+        'clients',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    } on DatabaseException catch (e) {
+      if (e.toString().contains('IMMUTABILITY_VIOLATION')) {
+        throw const ScopeImmutabilityException(
+          'Cannot delete client because they are linked to an approved, immutable project scope.',
+        );
+      }
+      rethrow;
+    }
   }
 }

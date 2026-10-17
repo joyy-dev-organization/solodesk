@@ -12,12 +12,14 @@ class OverviewMetrics {
   final int activeProjects;
   final int approvedScopes;
   final int pendingDrafts;
+  final int unpaidInvoices;
 
   const OverviewMetrics({
     required this.totalClients,
     required this.activeProjects,
     required this.approvedScopes,
     required this.pendingDrafts,
+    this.unpaidInvoices = 0,
   });
 }
 
@@ -244,11 +246,19 @@ class DemoDataRepository implements IDemoDataRepository {
     final scopesRes = await db.rawQuery("SELECT COUNT(*) as count FROM scope_versions WHERE status = 'approved' $synAndFilter");
     final draftsRes = await db.rawQuery("SELECT COUNT(*) as count FROM scope_versions WHERE status = 'draft' $synAndFilter");
 
+    int unpaidInvoices = 0;
+    final invoiceTable = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='invoices';");
+    if (invoiceTable.isNotEmpty) {
+      final invRes = await db.rawQuery("SELECT COUNT(*) as count FROM invoices WHERE status = 'unpaid' $synAndFilter");
+      unpaidInvoices = invRes.first['count'] as int? ?? 0;
+    }
+
     return OverviewMetrics(
       totalClients: clientsRes.first['count'] as int? ?? 0,
       activeProjects: projectsRes.first['count'] as int? ?? 0,
       approvedScopes: scopesRes.first['count'] as int? ?? 0,
       pendingDrafts: draftsRes.first['count'] as int? ?? 0,
+      unpaidInvoices: unpaidInvoices,
     );
   }
 }
