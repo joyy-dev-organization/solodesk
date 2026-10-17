@@ -40,13 +40,7 @@ export function normalizeCategory(val: unknown): FindingCategory {
  */
 export function normalizeScopeOutput(raw: any, scopeItems: ScopeCheckInput['scopeItems']): ScopeCheckOutput {
   if (!raw || typeof raw !== 'object') {
-    return {
-      findings: [],
-      evaluations: [],
-      replyDraft: 'Thank you for your message. Let me review your request against our agreed project scope.',
-      suggestedReply: 'Thank you for your message. Let me review your request against our agreed project scope.',
-      summary: 'Unable to parse findings from model output.',
-    };
+    throw new Error('INVALID_OUTPUT: ScopeCheck model produced non-object output');
   }
 
   const rawFindings = Array.isArray(raw.findings)
@@ -231,10 +225,14 @@ Return ONLY a JSON object with this exact structure:
       parsed = extractJsonFromText(rawOutput);
     } catch {
       // 1 single repair pass allowed by handbook protocol
-      const repairRes = await agent.generate(
-        `The previous output was not valid JSON. Convert the following text into strictly valid JSON without comments or markdown:\n${rawOutput}`
-      );
-      parsed = extractJsonFromText(repairRes.text ?? '{}');
+      try {
+        const repairRes = await agent.generate(
+          `The previous output was not valid JSON. Convert the following text into strictly valid JSON without comments or markdown:\n${rawOutput}`
+        );
+        parsed = extractJsonFromText(repairRes.text ?? '{}');
+      } catch (repairErr) {
+        throw new Error(`INVALID_OUTPUT: ScopeCheck model output could not be parsed as JSON after 1 repair attempt: ${repairErr instanceof Error ? repairErr.message : String(repairErr)}`);
+      }
     }
 
     const normalized = normalizeScopeOutput(parsed, scopeItems);

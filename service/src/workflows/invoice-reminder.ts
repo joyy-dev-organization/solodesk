@@ -144,10 +144,14 @@ Return ONLY a JSON object with this exact shape:
       parsed = extractJsonFromText(rawOutput);
     } catch {
       // 1 single repair pass allowed by handbook protocol
-      const repairRes = await agent.generate(
-        `The previous output was not valid JSON. Convert the following text into strictly valid JSON matching { "summary": string, "toneUsed": string, "reminderDraft": string }:\n${rawOutput}`
-      );
-      parsed = extractJsonFromText(repairRes.text ?? '{}');
+      try {
+        const repairRes = await agent.generate(
+          `The previous output was not valid JSON. Convert the following text into strictly valid JSON matching { "summary": string, "toneUsed": string, "reminderDraft": string }:\n${rawOutput}`
+        );
+        parsed = extractJsonFromText(repairRes.text ?? '{}');
+      } catch (repairErr) {
+        throw new Error(`INVALID_OUTPUT: Invoice reminder model output could not be parsed as JSON after 1 repair attempt: ${repairErr instanceof Error ? repairErr.message : String(repairErr)}`);
+      }
     }
 
     const normalized = normalizeInvoiceReminderOutput(parsed, inputData);

@@ -67,6 +67,7 @@ export const ErrorCode = {
 export type SafeErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 
 export interface SafeErrorEnvelope {
+  requestId: string;
   error: {
     code: SafeErrorCode;
     message: string;
@@ -99,6 +100,7 @@ function sendError(
   requestId: string
 ) {
   const envelope: SafeErrorEnvelope = {
+    requestId,
     error: { code, message, retryable, requestId },
   };
   sendJson(res, statusCode, envelope);
@@ -140,8 +142,34 @@ export async function getServiceHealth() {
 
 export function createServer(): http.Server {
   return http.createServer(async (req, res) => {
-    const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
     const requestId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
+
+    // 1. Reject browser origins to protect local service against web CSRF / drive-by attacks
+    if (req.headers['origin']) {
+      return sendError(
+        res,
+        403,
+        ErrorCode.UNAUTHORIZED,
+        'Browser origins are strictly prohibited on loopback service',
+        false,
+        requestId
+      );
+    }
+
+    // 2. Reject non-loopback Host headers (DNS rebinding protection)
+    const hostHeader = req.headers['host'] ?? '';
+    if (!hostHeader.startsWith('127.0.0.1') && !hostHeader.startsWith('localhost')) {
+      return sendError(
+        res,
+        403,
+        ErrorCode.UNAUTHORIZED,
+        'Service binds exclusively to loopback interface',
+        false,
+        requestId
+      );
+    }
+
+    const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
 
     // Health route: no auth required, strictly loopback
     if (req.method === 'GET' && url.pathname === '/health') {
@@ -152,6 +180,12 @@ export function createServer(): http.Server {
     // All protected endpoints require local bearer authentication
     const isBriefCheck = req.method === 'POST' && (url.pathname === '/api/brief-check' || url.pathname === '/v1/brief-check');
     const isScopeCheck = req.method === 'POST' && (url.pathname === '/api/scope-check' || url.pathname === '/v1/scope-check');
+    const isInvoiceReminder = req.method === 'POST' && (
+      url.pathname === '/api/invoice-reminder' ||
+      url.pathname === '/v1/invoice-reminder' ||
+      url.pathname === '/v1/reminder-draft' ||
+      url.pathname === '/api/reminder-draft'
+    );
 
     if (!authenticate(req)) {
       return sendError(res, 401, ErrorCode.UNAUTHORIZED, 'Unauthorized: Invalid or missing local bearer token', false, requestId);
@@ -169,40 +203,39 @@ export function createServer(): http.Server {
           requestId
         );
       }
-
-      let rawBody: string;
-      try {
-        rawBody = await readBody(req);
-      } catch {
-        return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Failed to read request body', false, requestId);
-      }
-
-      let parsedJson: unknown;
-      try {
-        parsedJson = JSON.parse(rawBody);
-      } catch {
-        return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Malformed JSON in request body', false, requestId);
-      }
-
-      const validated = BriefCheckInputSchema.safeParse(parsedJson);
-      if (!validated.success) {
-        const errorMsg = validated.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
-        return sendError(res, 400, ErrorCode.INVALID_INPUT, errorMsg, false, requestId);
-      }
-
-      // Check Ollama readiness
-      const ollama = await checkOllamaReadiness();
-      if (!ollama.available) {
-        return sendError(res, 503, ErrorCode.MODEL_UNAVAILABLE, 'Local Ollama service is not running on 127.0.0.1:11434', true, requestId);
-      }
-      if (!ollama.modelReady) {
-        return sendError(res, 503, ErrorCode.MODEL_NOT_FOUND, `Required model ${ACTIVE_MODEL_ID} is not pulled in local Ollama`, false, requestId);
-      }
-
       isInferenceBusy = true;
       let activeRun: any = null;
 
       try {
+        let rawBody: string;
+        try {
+          rawBody = await readBody(req);
+        } catch {
+          return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Failed to read request body', false, requestId);
+        }
+
+        let parsedJson: unknown;
+        try {
+          parsedJson = JSON.parse(rawBody);
+        } catch {
+          return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Malformed JSON in request body', false, requestId);
+        }
+
+        const validated = BriefCheckInputSchema.safeParse(parsedJson);
+        if (!validated.success) {
+          const errorMsg = validated.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
+          return sendError(res, 400, ErrorCode.INVALID_INPUT, errorMsg, false, requestId);
+        }
+
+        // Check Ollama readiness
+        const ollama = await checkOllamaReadiness();
+        if (!ollama.available) {
+          return sendError(res, 503, ErrorCode.MODEL_UNAVAILABLE, 'Local Ollama service is not running on 127.0.0.1:11434', true, requestId);
+        }
+        if (!ollama.modelReady) {
+          return sendError(res, 503, ErrorCode.MODEL_NOT_FOUND, `Required model ${ACTIVE_MODEL_ID} is not pulled in local Ollama`, false, requestId);
+        }
+
         const timeoutPromise = new Promise<never>((_, reject) => {
           const timer = setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), INFERENCE_TIMEOUT_MS);
           timer.unref();
@@ -243,38 +276,37 @@ export function createServer(): http.Server {
       if (isInferenceBusy) {
         return sendError(res, 429, ErrorCode.BUSY, 'Another inference task is currently executing. Bounded to single concurrency.', true, requestId);
       }
-
-      let rawBody: string;
-      try {
-        rawBody = await readBody(req);
-      } catch {
-        return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Failed to read request body', false, requestId);
-      }
-
-      let parsedJson: unknown;
-      try {
-        parsedJson = JSON.parse(rawBody);
-      } catch {
-        return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Malformed JSON in request body', false, requestId);
-      }
-
-      const validated = ScopeCheckInputSchema.safeParse(parsedJson);
-      if (!validated.success) {
-        return sendError(res, 400, ErrorCode.INVALID_INPUT, validated.error.message, false, requestId);
-      }
-
-      const ollama = await checkOllamaReadiness();
-      if (!ollama.available) {
-        return sendError(res, 503, ErrorCode.MODEL_UNAVAILABLE, 'Local Ollama service is not running on 127.0.0.1:11434', true, requestId);
-      }
-      if (!ollama.modelReady) {
-        return sendError(res, 503, ErrorCode.MODEL_NOT_FOUND, `Required model ${ACTIVE_MODEL_ID} is not pulled in local Ollama`, false, requestId);
-      }
-
       isInferenceBusy = true;
       let activeRun: any = null;
 
       try {
+        let rawBody: string;
+        try {
+          rawBody = await readBody(req);
+        } catch {
+          return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Failed to read request body', false, requestId);
+        }
+
+        let parsedJson: unknown;
+        try {
+          parsedJson = JSON.parse(rawBody);
+        } catch {
+          return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Malformed JSON in request body', false, requestId);
+        }
+
+        const validated = ScopeCheckInputSchema.safeParse(parsedJson);
+        if (!validated.success) {
+          return sendError(res, 400, ErrorCode.INVALID_INPUT, validated.error.message, false, requestId);
+        }
+
+        const ollama = await checkOllamaReadiness();
+        if (!ollama.available) {
+          return sendError(res, 503, ErrorCode.MODEL_UNAVAILABLE, 'Local Ollama service is not running on 127.0.0.1:11434', true, requestId);
+        }
+        if (!ollama.modelReady) {
+          return sendError(res, 503, ErrorCode.MODEL_NOT_FOUND, `Required model ${ACTIVE_MODEL_ID} is not pulled in local Ollama`, false, requestId);
+        }
+
         const timeoutPromise = new Promise<never>((_, reject) => {
           const timer = setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), INFERENCE_TIMEOUT_MS);
           timer.unref();
@@ -310,13 +342,6 @@ export function createServer(): http.Server {
       }
     }
 
-    const isInvoiceReminder = req.method === 'POST' && (
-      url.pathname === '/api/invoice-reminder' ||
-      url.pathname === '/v1/invoice-reminder' ||
-      url.pathname === '/v1/reminder-draft' ||
-      url.pathname === '/api/reminder-draft'
-    );
-
     if (isInvoiceReminder) {
       if (isInferenceBusy) {
         return sendError(
@@ -328,39 +353,38 @@ export function createServer(): http.Server {
           requestId
         );
       }
-
-      let rawBody: string;
-      try {
-        rawBody = await readBody(req);
-      } catch {
-        return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Failed to read request body', false, requestId);
-      }
-
-      let parsedJson: unknown;
-      try {
-        parsedJson = JSON.parse(rawBody);
-      } catch {
-        return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Malformed JSON in request body', false, requestId);
-      }
-
-      const validated = InvoiceReminderInputSchema.safeParse(parsedJson);
-      if (!validated.success) {
-        const errorMsg = validated.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
-        return sendError(res, 400, ErrorCode.INVALID_INPUT, errorMsg, false, requestId);
-      }
-
-      const ollama = await checkOllamaReadiness();
-      if (!ollama.available) {
-        return sendError(res, 503, ErrorCode.MODEL_UNAVAILABLE, 'Local Ollama service is not running on 127.0.0.1:11434', true, requestId);
-      }
-      if (!ollama.modelReady) {
-        return sendError(res, 503, ErrorCode.MODEL_NOT_FOUND, `Required model ${ACTIVE_MODEL_ID} is not pulled in local Ollama`, false, requestId);
-      }
-
       isInferenceBusy = true;
       let activeRun: any = null;
 
       try {
+        let rawBody: string;
+        try {
+          rawBody = await readBody(req);
+        } catch {
+          return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Failed to read request body', false, requestId);
+        }
+
+        let parsedJson: unknown;
+        try {
+          parsedJson = JSON.parse(rawBody);
+        } catch {
+          return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Malformed JSON in request body', false, requestId);
+        }
+
+        const validated = InvoiceReminderInputSchema.safeParse(parsedJson);
+        if (!validated.success) {
+          const errorMsg = validated.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
+          return sendError(res, 400, ErrorCode.INVALID_INPUT, errorMsg, false, requestId);
+        }
+
+        const ollama = await checkOllamaReadiness();
+        if (!ollama.available) {
+          return sendError(res, 503, ErrorCode.MODEL_UNAVAILABLE, 'Local Ollama service is not running on 127.0.0.1:11434', true, requestId);
+        }
+        if (!ollama.modelReady) {
+          return sendError(res, 503, ErrorCode.MODEL_NOT_FOUND, `Required model ${ACTIVE_MODEL_ID} is not pulled in local Ollama`, false, requestId);
+        }
+
         const timeoutPromise = new Promise<never>((_, reject) => {
           const timer = setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), INFERENCE_TIMEOUT_MS);
           timer.unref();

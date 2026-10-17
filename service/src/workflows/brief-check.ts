@@ -119,8 +119,12 @@ Return ONLY a JSON object with this exact shape:
       parsed = extractJsonFromText(rawOutput);
     } catch {
       // 1 single repair pass allowed by handbook protocol
-      const repairRes = await agent.generate(`The previous output was not valid JSON. Convert the following into strictly valid JSON without comments or extra text:\n${rawOutput}`);
-      parsed = extractJsonFromText(repairRes.text ?? '{}');
+      try {
+        const repairRes = await agent.generate(`The previous output was not valid JSON. Convert the following into strictly valid JSON without comments or extra text:\n${rawOutput}`);
+        parsed = extractJsonFromText(repairRes.text ?? '{}');
+      } catch (repairErr) {
+        throw new Error(`INVALID_OUTPUT: BriefCheck model output could not be parsed as JSON after 1 repair attempt: ${repairErr instanceof Error ? repairErr.message : String(repairErr)}`);
+      }
     }
 
     const normalized = normalizeBriefOutput(parsed);

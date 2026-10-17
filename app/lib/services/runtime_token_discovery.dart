@@ -24,6 +24,14 @@ class RuntimeTokenDiscovery {
       '${Directory.current.path}/.runtime-token',
     ];
 
+    // Executable directory candidates (packaged Windows desktop release)
+    try {
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      candidates.add('$exeDir/service/.runtime-token');
+      candidates.add('$exeDir/.runtime-token');
+      candidates.add('$exeDir/../service/.runtime-token');
+    } catch (_) {}
+
     // Windows AppData paths
     final appData = Platform.environment['APPDATA'];
     if (appData != null && appData.isNotEmpty) {

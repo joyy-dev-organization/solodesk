@@ -109,7 +109,7 @@ class BriefCheckClient {
       final errorMap = jsonResponse['error'] as Map<String, dynamic>? ?? {};
       final errorCode = errorMap['code'] as String? ?? 'UNKNOWN_ERROR';
       final errorMessage = errorMap['message'] as String? ?? 'Error: HTTP ${response.statusCode}';
-      final requestId = jsonResponse['requestId'] as String?;
+      final requestId = (jsonResponse['requestId'] ?? errorMap['requestId']) as String?;
 
       switch (response.statusCode) {
         case HttpStatus.unauthorized:

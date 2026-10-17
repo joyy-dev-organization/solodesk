@@ -9,7 +9,11 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --fileParallelism=false"
+    "test": "vitest run --fileParallelism=false",
+    "eval": "vitest run test/m1-model-spike.test.ts"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   },
   "keywords": [
     "solodesk",
