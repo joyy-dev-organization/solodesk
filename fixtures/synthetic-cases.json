@@ -47,10 +47,11 @@
     {
       "id": "scope-1-included-revision",
       "name": "Included Color Adjustment",
+      "niche": "design",
       "scopeVersionId": "v1-approved",
       "scopeItems": [
-        { "id": "item-1", "title": "Logo Concept & Vector Master", "description": "Primary logo design with 2 rounds of color and typographic adjustments." },
-        { "id": "item-2", "title": "Brand Style Sheet", "description": "Single-page PDF specifying hex codes, typography hierarchy, and minimum logo spacing." }
+        { "id": "item-1", "category": "included", "title": "Logo Concept & Vector Master", "description": "Primary logo design with 2 rounds of color and typographic adjustments." },
+        { "id": "item-2", "category": "included", "title": "Brand Style Sheet", "description": "Single-page PDF specifying hex codes, typography hierarchy, and minimum logo spacing." }
       ],
       "requestText": "Thanks for the first logo draft! Can we tweak the green shade to be a bit darker forest green, and test the subtitle in uppercase instead? This is our first round of revisions.",
       "expectedClassification": "INCLUDED"
@@ -58,9 +59,11 @@
     {
       "id": "scope-2-outside-deliverable",
       "name": "Excluded eCommerce Checkout Addition",
+      "niche": "general",
       "scopeVersionId": "v1-approved",
       "scopeItems": [
-        { "id": "item-1", "title": "Static Landing Page", "description": "Responsive HTML/CSS landing page showcasing agency services and contact form. Excludes user login, databases, payment processing, or eCommerce checkout." }
+        { "id": "item-1", "category": "included", "title": "Static Landing Page", "description": "Responsive HTML/CSS landing page showcasing agency services and contact form. Excludes user login, databases, payment processing, or eCommerce checkout." },
+        { "id": "item-2", "category": "excluded", "title": "Payment Checkout", "description": "Payment gateways, Stripe integration, user authentication, or merchant checkout." }
       ],
       "requestText": "The landing page looks great! Can we also add a Stripe checkout so visitors can buy our $50 consulting package directly on this page?",
       "expectedClassification": "POTENTIALLY_OUTSIDE"
@@ -68,12 +71,46 @@
     {
       "id": "scope-3-ambiguous-request",
       "name": "Ambiguous Aesthetic Change",
+      "niche": "design",
       "scopeVersionId": "v1-approved",
       "scopeItems": [
-        { "id": "item-1", "title": "Packaging Label Design", "description": "Front and back coffee bag label design for 250g bags conforming to supplier template." }
+        { "id": "item-1", "category": "included", "title": "Packaging Label Design", "description": "Front and back coffee bag label design for 250g bags conforming to supplier template." }
       ],
       "requestText": "The back label feels a bit flat. Can we add something premium to make it really pop and stand out from competitors on the shelf?",
       "expectedClassification": "NEEDS_CLARIFICATION"
+    },
+    {
+      "id": "scope-4-mixed-request",
+      "name": "Mixed Request: Typographic Tweak and Custom Mobile App",
+      "niche": "writing",
+      "scopeVersionId": "v2-approved",
+      "scopeItems": [
+        { "id": "item-w1", "category": "included", "title": "B2B SaaS Blog Series", "description": "Five 1,500-word educational articles on cloud security in Markdown format." },
+        { "id": "item-w2", "category": "allowance", "title": "Proofreading Allowance", "description": "Up to 2 rounds of structural copy proofreading and heading adjustments." },
+        { "id": "item-w3", "category": "excluded", "title": "Software Development", "description": "Custom mobile software development, backend databases, or native iOS/Android code." }
+      ],
+      "requestText": "Thanks for draft #2! Can we change the subheader on section 3 to 'Zero-Trust Network Perimeter' (that's revision round 1)? Also, we decided our team needs a custom mobile app built in Flutter for internal auditing.",
+      "expectedClassification": "MIXED"
+    },
+    {
+      "id": "scope-5-stale-version",
+      "name": "Stale or Empty Scope Version Identification",
+      "niche": "general",
+      "scopeVersionId": "",
+      "scopeItems": [
+        { "id": "item-s1", "category": "included", "title": "Single-page setup", "description": "Single-page landing page setup." }
+      ],
+      "requestText": "Can we update the header font?",
+      "expectedClassification": "INVALID_INPUT"
+    },
+    {
+      "id": "scope-6-missing-scope",
+      "name": "Missing or Empty Scope Items Array",
+      "niche": "general",
+      "scopeVersionId": "ver-draft-empty",
+      "scopeItems": [],
+      "requestText": "Could you add another banner image to the homepage?",
+      "expectedClassification": "INVALID_INPUT"
     }
   ]
 }

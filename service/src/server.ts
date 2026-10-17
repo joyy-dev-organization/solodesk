@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { checkOllamaReadiness, ACTIVE_MODEL_ID } from './model.js';
 import { runBriefCheck, briefCheckWorkflow } from './workflows/brief-check.js';
-import { runScopeCheck } from './workflows/scope-check.js';
+import { runScopeCheck, scopeCheckWorkflow } from './workflows/scope-check.js';
 import { BriefCheckInputSchema } from './schemas/brief-check.schema.js';
 import { ScopeCheckInputSchema } from './schemas/scope-check.schema.js';
 
@@ -270,14 +270,31 @@ export function createServer(): http.Server {
       }
 
       isInferenceBusy = true;
+      let activeRun: any = null;
+
       try {
         const timeoutPromise = new Promise<never>((_, reject) => {
           const timer = setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), INFERENCE_TIMEOUT_MS);
           timer.unref();
         });
-        const result = await Promise.race([runScopeCheck(validated.data), timeoutPromise]);
+
+        const runPromise = (async () => {
+          const run = await scopeCheckWorkflow.createRun({ runId: requestId });
+          activeRun = run;
+          const executionResult = await run.start({ inputData: validated.data });
+          if (executionResult.status !== 'success') {
+            const failureMsg = (executionResult as any).error?.message || 'Workflow run failed';
+            throw new Error(failureMsg);
+          }
+          return executionResult.result;
+        })();
+
+        const result = await Promise.race([runPromise, timeoutPromise]);
         return sendJson(res, 200, { requestId, data: result });
       } catch (err) {
+        if (activeRun && typeof activeRun.cancel === 'function') {
+          await activeRun.cancel().catch(() => {});
+        }
         const msg = err instanceof Error ? err.message : String(err);
         if (msg === 'TIMEOUT_EXCEEDED') {
           return sendError(res, 504, ErrorCode.TIMEOUT, `Inference exceeded maximum timeout of ${INFERENCE_TIMEOUT_MS / 1000} seconds`, true, requestId);
