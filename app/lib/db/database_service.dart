@@ -4,7 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class DatabaseService {
-  static const int currentSchemaVersion = 1;
+  static const int currentSchemaVersion = 2;
 
   final Database _db;
 
@@ -61,6 +61,9 @@ class DatabaseService {
     for (int v = oldVersion + 1; v <= newVersion; v++) {
       if (v == 1) {
         await _applyV1(db);
+      }
+      if (v == 2) {
+        await _applyV2(db);
       }
     }
   }
@@ -221,6 +224,43 @@ class DatabaseService {
       1,
       DateTime.now().toUtc().toIso8601String(),
       'M2 initial schema: preferences, clients, projects, scope_versions, scope_items, immutability triggers'
+    ]);
+  }
+
+  static Future<void> _applyV2(DatabaseExecutor db) async {
+    // 6. Invoices table
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS invoices (
+        id TEXT PRIMARY KEY NOT NULL,
+        client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+        invoice_number TEXT NOT NULL,
+        amount_minor_units INTEGER NOT NULL CHECK(amount_minor_units >= 0),
+        currency TEXT NOT NULL CHECK(length(currency) = 3),
+        issue_date TEXT NOT NULL,
+        due_date TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('draft', 'unpaid', 'paid', 'cancelled')),
+        paid_at TEXT,
+        notes TEXT,
+        is_synthetic INTEGER NOT NULL DEFAULT 0 CHECK(is_synthetic IN (0, 1)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_invoices_client_id ON invoices(client_id);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_invoices_project_id ON invoices(project_id);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_invoices_synthetic ON invoices(is_synthetic);');
+
+    // Record migration in audit log
+    await db.rawInsert('''
+      INSERT INTO schema_migrations (version, applied_at, description)
+      VALUES (?, ?, ?)
+    ''', [
+      2,
+      DateTime.now().toUtc().toIso8601String(),
+      'M5 schema: invoices table with client/project FKs, status, minor units, calendar dates'
     ]);
   }
 }

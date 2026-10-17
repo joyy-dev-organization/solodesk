@@ -9,8 +9,10 @@ export * from './model.js';
 export * from './server.js';
 export * from './schemas/brief-check.schema.js';
 export * from './schemas/scope-check.schema.js';
+export * from './schemas/invoice-reminder.schema.js';
 export * from './workflows/brief-check.js';
 export * from './workflows/scope-check.js';
+export * from './workflows/invoice-reminder.js';
 
 // Auto-start if run directly
 if (process.argv[1]?.endsWith('index.js') || process.argv[1]?.endsWith('index.ts')) {

@@ -5,6 +5,7 @@ import '../models/project.dart';
 import '../models/money.dart';
 import '../models/scope_version.dart';
 import '../models/scope_item.dart';
+import '../models/invoice.dart';
 
 class OverviewMetrics {
   final int totalClients;
@@ -167,12 +168,65 @@ class DemoDataRepository implements IDemoDataRepository {
     );
     batch.insert('clients', client3.toDbMap());
 
+    // 4. Synthetic Invoices
+    // Invoice 1: Amina Musa, ₦220,000.00, overdue by 5 days
+    final inv1 = Invoice(
+      id: uuid.v4(),
+      clientId: client1Id,
+      projectId: proj1Id,
+      invoiceNumber: 'INV-2026-001',
+      amount: const Money(minorUnits: 22000000, currency: 'NGN'),
+      issueDate: now.subtract(const Duration(days: 19)),
+      dueDate: now.subtract(const Duration(days: 5)),
+      status: InvoiceStatus.unpaid,
+      notes: 'Initial 50% deposit for brand identity deliverables.',
+      isSynthetic: true,
+      createdAt: now.subtract(const Duration(days: 19)),
+      updatedAt: now.subtract(const Duration(days: 19)),
+    );
+    batch.insert('invoices', inv1.toDbMap());
+
+    // Invoice 2: Northstar Media, ₦180,000.00, due in 7 days (upcoming)
+    final inv2 = Invoice(
+      id: uuid.v4(),
+      clientId: client2Id,
+      projectId: proj2Id,
+      invoiceNumber: 'INV-2026-002',
+      amount: const Money(minorUnits: 18000000, currency: 'NGN'),
+      issueDate: now.subtract(const Duration(days: 7)),
+      dueDate: now.add(const Duration(days: 7)),
+      status: InvoiceStatus.unpaid,
+      notes: 'Monthly content sprint invoice (net-14 terms).',
+      isSynthetic: true,
+      createdAt: now.subtract(const Duration(days: 7)),
+      updatedAt: now.subtract(const Duration(days: 7)),
+    );
+    batch.insert('invoices', inv2.toDbMap());
+
+    // Invoice 3: FitPath Coaching, $850.00 USD, paid 3 days ago
+    final inv3 = Invoice(
+      id: uuid.v4(),
+      clientId: client3Id,
+      invoiceNumber: 'INV-2026-003',
+      amount: const Money(minorUnits: 85000, currency: 'USD'),
+      issueDate: now.subtract(const Duration(days: 14)),
+      dueDate: now.subtract(const Duration(days: 3)),
+      status: InvoiceStatus.paid,
+      paidAt: now.subtract(const Duration(days: 3)),
+      notes: 'Consulting strategy session.',
+      isSynthetic: true,
+      createdAt: now.subtract(const Duration(days: 14)),
+      updatedAt: now.subtract(const Duration(days: 3)),
+    );
+    batch.insert('invoices', inv3.toDbMap());
+
     await batch.commit(noResult: true);
   }
 
   @override
   Future<void> purgeSyntheticData() async {
     final batch = db.batch();
+    batch.delete('invoices', where: 'is_synthetic = 1');
     batch.delete('scope_items', where: 'is_synthetic = 1');
     batch.delete('scope_versions', where: 'is_synthetic = 1');
     batch.delete('projects', where: 'is_synthetic = 1');

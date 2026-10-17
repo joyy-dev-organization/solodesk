@@ -4,6 +4,7 @@ import 'client_repository.dart';
 import 'project_repository.dart';
 import 'scope_repository.dart';
 import 'demo_data_repository.dart';
+import 'invoice_repository.dart';
 
 class RepositoryScope extends InheritedWidget {
   final IPreferenceRepository preferenceRepo;
@@ -11,6 +12,7 @@ class RepositoryScope extends InheritedWidget {
   final IProjectRepository projectRepo;
   final IScopeRepository scopeRepo;
   final IDemoDataRepository demoDataRepo;
+  final IInvoiceRepository invoiceRepo;
 
   const RepositoryScope({
     super.key,
@@ -19,6 +21,7 @@ class RepositoryScope extends InheritedWidget {
     required this.projectRepo,
     required this.scopeRepo,
     required this.demoDataRepo,
+    required this.invoiceRepo,
     required super.child,
   });
 

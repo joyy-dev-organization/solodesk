@@ -15,6 +15,7 @@ import 'package:solodesk/models/service_preference.dart';
 import 'package:solodesk/screens/brief_check_screen.dart';
 import 'package:solodesk/services/brief_check_client.dart';
 import 'package:solodesk/services/brief_check_exceptions.dart';
+import '../helpers/fake_invoice_repository.dart';
 
 class FakeBriefCheckClient extends BriefCheckClient {
   BriefCheckResult? stubResult;
@@ -202,6 +203,7 @@ void main() {
           projectRepo: projectRepo,
           scopeRepo: scopeRepo,
           demoDataRepo: demoDataRepo,
+          invoiceRepo: FakeInvoiceRepository(),
           child: Scaffold(
             body: BriefCheckScreen(
               client: client ?? FakeBriefCheckClient(),

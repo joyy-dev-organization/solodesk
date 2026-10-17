@@ -31,13 +31,16 @@ void main() {
       expect(tableNames, contains('projects'));
       expect(tableNames, contains('scope_versions'));
       expect(tableNames, contains('scope_items'));
+      expect(tableNames, contains('invoices'));
     });
 
-    test('records migration version 1 in schema_migrations audit log', () async {
-      final rows = await dbService.db.query('schema_migrations');
-      expect(rows.length, equals(1));
-      expect(rows.first['version'], equals(1));
-      expect(rows.first['description'], contains('M2 initial schema'));
+    test('records migration versions in schema_migrations audit log', () async {
+      final rows = await dbService.db.query('schema_migrations', orderBy: 'version ASC');
+      expect(rows.length, equals(2));
+      expect(rows[0]['version'], equals(1));
+      expect(rows[0]['description'], contains('M2 initial schema'));
+      expect(rows[1]['version'], equals(2));
+      expect(rows[1]['description'], contains('invoices table'));
     });
   });
 }

@@ -1,24 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/unfinished_placeholder.dart';
 
-class PolitePayScreen extends StatelessWidget {
-  const PolitePayScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const SingleChildScrollView(
-      child: UnfinishedPlaceholder(
-        title: 'PolitePay',
-        milestone: 'Milestone M5 · P1 Priority',
-        description: 'Invoice tracking with exact minor-unit arithmetic in Dart and polite, AI-drafted payment reminders.',
-        plannedDetails: 'PolitePay will calculate overdue dates, compute outstanding balances from SQLite invoice records, '
-            'and draft polite payment reminder messages adapted to tone (Friendly, Firm, Final) '
-            'without sending real emails or inventing dates.',
-        icon: Icons.attach_money_outlined,
-      ),
-    );
-  }
-}
 
 class LeadLoopScreen extends StatelessWidget {
   const LeadLoopScreen({super.key});

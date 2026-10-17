@@ -8,6 +8,7 @@ import 'screens/my_services_screen.dart';
 import 'screens/brief_check_screen.dart';
 import 'screens/scope_shield_screen.dart';
 import 'screens/roadmap_screen.dart';
+import 'screens/polite_pay_screen.dart';
 
 class AppShell extends StatefulWidget {
   final ServiceHealthClient healthClient;
@@ -124,7 +125,9 @@ class _AppShellState extends State<AppShell> {
                       ScopeShieldScreen(
                         isSyntheticDemoActive: _isSyntheticDemoActive,
                       ),
-                      const PolitePayScreen(),
+                      PolitePayScreen(
+                        isSyntheticDemoActive: _isSyntheticDemoActive,
+                      ),
                       const RepeatWorkScreen(),
                       MyServicesScreen(
                         onSaved: () => _initPreferencesAndDemoState(),

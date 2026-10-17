@@ -24,6 +24,8 @@ class Client {
     required this.updatedAt,
   });
 
+  String get displayName => company != null && company!.isNotEmpty ? '$name ($company)' : name;
+
   static String computeInitials(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));
     if (parts.isEmpty || parts[0].isEmpty) return '??';

@@ -38,6 +38,16 @@ class Money {
 
   double toMajorUnits() => minorUnits / 100.0;
 
+  String get formatted => format();
+
+  static int decimalStringToMinorUnits(String text) {
+    final cleaned = text.trim();
+    if (cleaned.isEmpty) return 0;
+    final d = double.tryParse(cleaned);
+    if (d == null || d <= 0) return 0;
+    return (d * 100).round();
+  }
+
   String format() {
     final major = (minorUnits ~/ 100).toString();
     final minor = (minorUnits % 100).toString().padLeft(2, '0');

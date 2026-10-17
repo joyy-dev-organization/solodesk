@@ -16,6 +16,7 @@ import 'package:solodesk/models/service_preference.dart';
 import 'package:solodesk/screens/scope_shield_screen.dart';
 import 'package:solodesk/services/scope_check_client.dart';
 import 'package:solodesk/services/scope_check_exceptions.dart';
+import '../helpers/fake_invoice_repository.dart';
 
 class FakeScopeCheckClient extends ScopeCheckClient {
   ScopeCheckResult? stubResult;
@@ -234,6 +235,7 @@ void main() {
       scopeRepo: scopeRepo,
       preferenceRepo: prefRepo,
       demoDataRepo: demoRepo,
+      invoiceRepo: FakeInvoiceRepository(),
       child: MaterialApp(
         home: Scaffold(
           body: ScopeShieldScreen(

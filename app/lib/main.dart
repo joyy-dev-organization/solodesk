@@ -8,6 +8,7 @@ import 'db/preference_repository.dart';
 import 'db/project_repository.dart';
 import 'db/repository_scope.dart';
 import 'db/scope_repository.dart';
+import 'db/invoice_repository.dart';
 import 'services/service_health.dart';
 import 'theme/theme.dart';
 
@@ -26,6 +27,7 @@ Future<void> main() async {
   final projectRepo = ProjectRepository(dbService.db);
   final scopeRepo = ScopeRepository(dbService.db);
   final demoDataRepo = DemoDataRepository(dbService.db);
+  final invoiceRepo = InvoiceRepository(dbService.db);
 
   runApp(
     SoloDeskApp(
@@ -34,6 +36,7 @@ Future<void> main() async {
       projectRepo: projectRepo,
       scopeRepo: scopeRepo,
       demoDataRepo: demoDataRepo,
+      invoiceRepo: invoiceRepo,
     ),
   );
 }
@@ -44,6 +47,7 @@ class SoloDeskApp extends StatelessWidget {
   final IProjectRepository projectRepo;
   final IScopeRepository scopeRepo;
   final IDemoDataRepository demoDataRepo;
+  final IInvoiceRepository invoiceRepo;
   final ServiceHealthClient? healthClient;
   final bool enableHealthPolling;
 
@@ -54,6 +58,7 @@ class SoloDeskApp extends StatelessWidget {
     required this.projectRepo,
     required this.scopeRepo,
     required this.demoDataRepo,
+    required this.invoiceRepo,
     this.healthClient,
     this.enableHealthPolling = true,
   });
@@ -66,6 +71,7 @@ class SoloDeskApp extends StatelessWidget {
       projectRepo: projectRepo,
       scopeRepo: scopeRepo,
       demoDataRepo: demoDataRepo,
+      invoiceRepo: invoiceRepo,
       child: MaterialApp(
         title: 'SoloDesk',
         debugShowCheckedModeBanner: false,
