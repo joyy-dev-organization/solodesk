@@ -227,13 +227,13 @@ class DemoDataRepository implements IDemoDataRepository {
 
   @override
   Future<void> purgeSyntheticData() async {
-    final batch = db.batch();
-    batch.delete('invoices', where: 'is_synthetic = 1');
-    batch.delete('scope_items', where: 'is_synthetic = 1');
-    batch.delete('scope_versions', where: 'is_synthetic = 1');
-    batch.delete('projects', where: 'is_synthetic = 1');
-    batch.delete('clients', where: 'is_synthetic = 1');
-    await batch.commit(noResult: true);
+    await db.transaction((txn) async {
+      await txn.delete('invoices', where: 'is_synthetic = 1');
+      await txn.delete('scope_items', where: 'is_synthetic = 1');
+      await txn.delete('scope_versions', where: 'is_synthetic = 1');
+      await txn.delete('projects', where: 'is_synthetic = 1');
+      await txn.delete('clients', where: 'is_synthetic = 1');
+    });
   }
 
   @override

@@ -44,6 +44,9 @@ class DatabaseService {
         onUpgrade: (db, oldVersion, newVersion) async {
           await _applyMigrations(db, oldVersion, newVersion);
         },
+        onOpen: (db) async {
+          await _ensureTriggers(db);
+        },
       ),
     );
     return DatabaseService._(db);
@@ -168,58 +171,7 @@ class DatabaseService {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_scope_items_version ON scope_items(scope_version_id);');
 
     // 7. Immutability Triggers for Approved Scopes (Real records)
-    await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS trg_scope_versions_prevent_update_when_approved
-      BEFORE UPDATE ON scope_versions
-      FOR EACH ROW
-      WHEN OLD.status = 'approved' AND OLD.is_synthetic = 0
-      BEGIN
-        SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Approved scope versions cannot be modified.');
-      END;
-    ''');
-
-    await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS trg_scope_versions_prevent_delete_when_approved
-      BEFORE DELETE ON scope_versions
-      FOR EACH ROW
-      WHEN OLD.status = 'approved' AND OLD.is_synthetic = 0
-      BEGIN
-        SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Approved scope versions cannot be deleted.');
-      END;
-    ''');
-
-    await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS trg_scope_items_prevent_update_when_approved
-      BEFORE UPDATE ON scope_items
-      FOR EACH ROW
-      WHEN (SELECT status FROM scope_versions WHERE id = OLD.scope_version_id) = 'approved'
-        AND (SELECT is_synthetic FROM scope_versions WHERE id = OLD.scope_version_id) = 0
-      BEGIN
-        SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Cannot modify items under an approved scope version.');
-      END;
-    ''');
-
-    await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS trg_scope_items_prevent_delete_when_approved
-      BEFORE DELETE ON scope_items
-      FOR EACH ROW
-      WHEN (SELECT status FROM scope_versions WHERE id = OLD.scope_version_id) = 'approved'
-        AND (SELECT is_synthetic FROM scope_versions WHERE id = OLD.scope_version_id) = 0
-      BEGIN
-        SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Cannot delete items under an approved scope version.');
-      END;
-    ''');
-
-    await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS trg_scope_items_prevent_insert_when_approved
-      BEFORE INSERT ON scope_items
-      FOR EACH ROW
-      WHEN (SELECT status FROM scope_versions WHERE id = NEW.scope_version_id) = 'approved'
-        AND (SELECT is_synthetic FROM scope_versions WHERE id = NEW.scope_version_id) = 0
-      BEGIN
-        SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Cannot add items to an already approved scope version.');
-      END;
-    ''');
+    await _ensureTriggers(db);
 
     // Record migration in audit log
     await db.rawInsert('''
@@ -267,5 +219,72 @@ class DatabaseService {
       DateTime.now().toUtc().toIso8601String(),
       'M5 schema: invoices table with client/project FKs, status, minor units, calendar dates'
     ]);
+  }
+
+  /// Ensures scope immutability triggers exist and are up to date on database open.
+  /// Drops and recreates the triggers so existing databases seamlessly adopt fixes.
+  static Future<void> _ensureTriggers(DatabaseExecutor db) async {
+    // 1. scope_versions update trigger: prevent modifying approved real versions
+    await db.execute('DROP TRIGGER IF EXISTS trg_scope_versions_prevent_update_when_approved;');
+    await db.execute('''
+      CREATE TRIGGER trg_scope_versions_prevent_update_when_approved
+      BEFORE UPDATE ON scope_versions
+      FOR EACH ROW
+      WHEN OLD.status = 'approved' AND OLD.is_synthetic = 0
+      BEGIN
+        SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Approved scope versions cannot be modified.');
+      END;
+    ''');
+
+    // 2. scope_versions delete trigger: prevent deleting approved real versions
+    await db.execute('DROP TRIGGER IF EXISTS trg_scope_versions_prevent_delete_when_approved;');
+    await db.execute('''
+      CREATE TRIGGER trg_scope_versions_prevent_delete_when_approved
+      BEFORE DELETE ON scope_versions
+      FOR EACH ROW
+      WHEN OLD.status = 'approved' AND OLD.is_synthetic = 0
+      BEGIN
+        SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Approved scope versions cannot be deleted.');
+      END;
+    ''');
+
+    // 3. scope_items update trigger: prevent updating items belonging to approved real versions
+    await db.execute('DROP TRIGGER IF EXISTS trg_scope_items_prevent_update_when_approved;');
+    await db.execute('''
+      CREATE TRIGGER trg_scope_items_prevent_update_when_approved
+      BEFORE UPDATE ON scope_items
+      FOR EACH ROW
+      WHEN (SELECT status FROM scope_versions WHERE id = OLD.scope_version_id) = 'approved'
+        AND (SELECT is_synthetic FROM scope_versions WHERE id = OLD.scope_version_id) = 0
+      BEGIN
+        SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Cannot modify items under an approved scope version.');
+      END;
+    ''');
+
+    // 4. scope_items delete trigger: prevent deleting items belonging to approved real versions
+    await db.execute('DROP TRIGGER IF EXISTS trg_scope_items_prevent_delete_when_approved;');
+    await db.execute('''
+      CREATE TRIGGER trg_scope_items_prevent_delete_when_approved
+      BEFORE DELETE ON scope_items
+      FOR EACH ROW
+      WHEN (SELECT status FROM scope_versions WHERE id = OLD.scope_version_id) = 'approved'
+        AND (SELECT is_synthetic FROM scope_versions WHERE id = OLD.scope_version_id) = 0
+      BEGIN
+        SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Cannot delete items under an approved scope version.');
+      END;
+    ''');
+
+    // 5. scope_items insert trigger: prevent inserting items into approved real versions
+    await db.execute('DROP TRIGGER IF EXISTS trg_scope_items_prevent_insert_when_approved;');
+    await db.execute('''
+      CREATE TRIGGER trg_scope_items_prevent_insert_when_approved
+      BEFORE INSERT ON scope_items
+      FOR EACH ROW
+      WHEN (SELECT status FROM scope_versions WHERE id = NEW.scope_version_id) = 'approved'
+        AND (SELECT is_synthetic FROM scope_versions WHERE id = NEW.scope_version_id) = 0
+      BEGIN
+        SELECT RAISE(ABORT, 'IMMUTABILITY_VIOLATION: Cannot add items to an already approved scope version.');
+      END;
+    ''');
   }
 }

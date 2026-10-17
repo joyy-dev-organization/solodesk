@@ -60,23 +60,37 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _toggleSyntheticDemo() async {
     final scope = RepositoryScope.of(context);
-    if (_isSyntheticDemoActive) {
-      // Purge
-      await scope.demoDataRepo.purgeSyntheticData();
+    try {
+      if (_isSyntheticDemoActive) {
+        // Purge
+        await scope.demoDataRepo.purgeSyntheticData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Synthetic demo records purged. Workspace restored to clean local state.')),
+          );
+        }
+      } else {
+        // Seed
+        await scope.demoDataRepo.seedSyntheticData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Synthetic demo records loaded for testing and exploration.')),
+          );
+        }
+      }
+    } catch (e) {
       if (mounted) {
-        setState(() => _isSyntheticDemoActive = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Synthetic demo records purged. Workspace restored to clean local state.')),
+          SnackBar(
+            content: Text('Failed to update demo data: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
-    } else {
-      // Seed
-      await scope.demoDataRepo.seedSyntheticData();
+    } finally {
       if (mounted) {
-        setState(() => _isSyntheticDemoActive = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Synthetic demo records loaded for testing and exploration.')),
-        );
+        final hasDemo = await scope.demoDataRepo.hasSyntheticData();
+        setState(() => _isSyntheticDemoActive = hasDemo);
       }
     }
   }
