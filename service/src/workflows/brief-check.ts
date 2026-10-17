@@ -30,6 +30,50 @@ export function extractJsonFromText(rawText: string): unknown {
   return JSON.parse(cleaned);
 }
 
+export function normalizeBriefOutput(raw: any): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+
+  const ensureStringArray = (arr: unknown): string[] => {
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map(item => {
+        if (typeof item === 'string') return item.trim();
+        if (item && typeof item === 'object') {
+          return (item.title || item.name || item.text || JSON.stringify(item)).trim();
+        }
+        return String(item).trim();
+      })
+      .filter(Boolean);
+  };
+
+  const ensureScopeItems = (arr: unknown): Array<{ title: string; description: string }> => {
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map(item => {
+        if (typeof item === 'string') {
+          const trimmed = item.trim();
+          return { title: trimmed, description: trimmed };
+        }
+        if (item && typeof item === 'object') {
+          const title = (item.title || item.name || 'Deliverable').trim();
+          const description = (item.description || item.details || title).trim();
+          return { title, description };
+        }
+        const s = String(item).trim();
+        return { title: 'Deliverable', description: s };
+      })
+      .filter(i => i.title.length > 0);
+  };
+
+  return {
+    statedRequirements: ensureStringArray(raw.statedRequirements ?? raw.requirements),
+    assumptions: ensureStringArray(raw.assumptions),
+    omissions: ensureStringArray(raw.omissions ?? raw.missingDetails),
+    suggestedQuestions: ensureStringArray(raw.suggestedQuestions ?? raw.questions),
+    starterScopeItems: ensureScopeItems(raw.starterScopeItems ?? raw.scopeItems ?? raw.deliverables),
+  };
+}
+
 export const analyzeBriefStep = createStep({
   id: 'analyze-brief-step',
   inputSchema: BriefCheckInputSchema,
@@ -79,7 +123,8 @@ Return ONLY a JSON object with this exact shape:
       parsed = extractJsonFromText(repairRes.text ?? '{}');
     }
 
-    const validated = BriefCheckOutputSchema.safeParse(parsed);
+    const normalized = normalizeBriefOutput(parsed);
+    const validated = BriefCheckOutputSchema.safeParse(normalized);
     if (!validated.success) {
       throw new Error(`INVALID_OUTPUT: BriefCheck schema validation failed: ${validated.error.message}`);
     }
@@ -109,4 +154,3 @@ export async function runBriefCheck(input: BriefCheckInput): Promise<BriefCheckO
   const errMessage = failedResult.error?.message || 'Workflow run failed';
   throw new Error(errMessage);
 }
-

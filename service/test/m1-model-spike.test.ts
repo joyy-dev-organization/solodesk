@@ -67,7 +67,7 @@ describe('Milestone M1 Integration Spike & Benchmarking', () => {
     });
     expect(res.status).toBe(401);
     const body = await res.json() as { error: { code: string } };
-    expect(body.error.code).toBe('INVALID_INPUT');
+    expect(body.error.code).toBe('UNAUTHORIZED');
   });
 
   it('rejects oversized inputs (>8,000 characters)', async () => {
