@@ -1,0 +1,58 @@
+{
+  "briefs": [
+    {
+      "id": "brief-1-vague-branding",
+      "niche": "design",
+      "name": "Vague Logo & Identity Request",
+      "text": "Hi, we are launching an organic coffee brand called MorningGlow next month. We need a modern, minimalist logo and some brand assets so we can start printing cups and setting up our website. Please keep it clean and earthy.",
+      "expectedOmissions": ["deadline", "vector source formats", "exact brand asset deliverables", "color palette requirements", "budget/pricing"]
+    },
+    {
+      "id": "brief-2-specified-copywriting",
+      "niche": "writing",
+      "name": "Well-Specified Copywriting Series",
+      "text": "We need four 1,200-word educational blog posts on remote engineering productivity for our B2B SaaS blog. Target audience is VP of Engineering. Tone should be authoritative yet accessible. We will provide 3 target SEO keywords per article. Includes 2 rounds of structural revision per post. Need by November 15th.",
+      "expectedOmissions": ["interview access", "publishing platform/CMS upload"]
+    },
+    {
+      "id": "brief-3-general-web-dev",
+      "niche": "general",
+      "name": "Freelancer Portfolio Web Page",
+      "text": "Can you build a sleek 3-page personal portfolio site for an architectural photographer? Pages: Home/Featured Works, About/Press, Contact. Must be mobile responsive and fast. What do you charge?",
+      "expectedOmissions": ["hosting provider", "content management system", "domain configuration", "image asset delivery format"]
+    }
+  ],
+  "scopeRequests": [
+    {
+      "id": "scope-1-included-revision",
+      "name": "Included Color Adjustment",
+      "scopeVersionId": "v1-approved",
+      "scopeItems": [
+        { "id": "item-1", "title": "Logo Concept & Vector Master", "description": "Primary logo design with 2 rounds of color and typographic adjustments." },
+        { "id": "item-2", "title": "Brand Style Sheet", "description": "Single-page PDF specifying hex codes, typography hierarchy, and minimum logo spacing." }
+      ],
+      "requestText": "Thanks for the first logo draft! Can we tweak the green shade to be a bit darker forest green, and test the subtitle in uppercase instead? This is our first round of revisions.",
+      "expectedClassification": "INCLUDED"
+    },
+    {
+      "id": "scope-2-outside-deliverable",
+      "name": "Excluded eCommerce Checkout Addition",
+      "scopeVersionId": "v1-approved",
+      "scopeItems": [
+        { "id": "item-1", "title": "Static Landing Page", "description": "Responsive HTML/CSS landing page showcasing agency services and contact form. Excludes user login, databases, payment processing, or eCommerce checkout." }
+      ],
+      "requestText": "The landing page looks great! Can we also add a Stripe checkout so visitors can buy our $50 consulting package directly on this page?",
+      "expectedClassification": "POTENTIALLY_OUTSIDE"
+    },
+    {
+      "id": "scope-3-ambiguous-request",
+      "name": "Ambiguous Aesthetic Change",
+      "scopeVersionId": "v1-approved",
+      "scopeItems": [
+        { "id": "item-1", "title": "Packaging Label Design", "description": "Front and back coffee bag label design for 250g bags conforming to supplier template." }
+      ],
+      "requestText": "The back label feels a bit flat. Can we add something premium to make it really pop and stand out from competitors on the shelf?",
+      "expectedClassification": "NEEDS_CLARIFICATION"
+    }
+  ]
+}

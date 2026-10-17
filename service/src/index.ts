@@ -3,25 +3,22 @@
  * Loopback-only service orchestrating BriefCheck and ScopeShield
  */
 
-export const SERVICE_NAME = 'solodesk-service';
-export const SERVICE_VERSION = '0.1.0';
-export const DEFAULT_HOST = '127.0.0.1';
-export const DEFAULT_PORT = 3141;
+import { startServer, PORT, HOST, getOrCreateRuntimeToken } from './server.js';
 
-export interface HealthResponse {
-  status: 'ok' | 'degraded';
-  version: string;
-  service: string;
-  loopbackOnly: boolean;
+export * from './model.js';
+export * from './server.js';
+export * from './schemas/brief-check.schema.js';
+export * from './schemas/scope-check.schema.js';
+export * from './workflows/brief-check.js';
+export * from './workflows/scope-check.js';
+
+// Auto-start if run directly
+if (process.argv[1]?.endsWith('index.js') || process.argv[1]?.endsWith('index.ts')) {
+  const token = getOrCreateRuntimeToken();
+  console.log(`[SoloDesk] Initializing local service...`);
+  console.log(`[SoloDesk] Auth Token written to .runtime-token (Length: ${token.length})`);
+  startServer(PORT, HOST).catch(err => {
+    console.error(`[SoloDesk] Failed to start service:`, err);
+    process.exit(1);
+  });
 }
-
-export function getServiceHealth(): HealthResponse {
-  return {
-    status: 'ok',
-    version: SERVICE_VERSION,
-    service: SERVICE_NAME,
-    loopbackOnly: true,
-  };
-}
-
-console.log(`${SERVICE_NAME} v${SERVICE_VERSION} scaffold initialized.`);

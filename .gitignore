@@ -20,6 +20,8 @@ service/yarn-error.log*
 .env.*
 !.env.example
 *.token
+.runtime-token
+service/.runtime-token
 *.key
 *.pem
 *.secret
