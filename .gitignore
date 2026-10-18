@@ -45,3 +45,7 @@ desktop.ini
 *.user
 *.userosscache
 *.sln.docstates
+
+# Release distribution builds
+release/
+*.zip

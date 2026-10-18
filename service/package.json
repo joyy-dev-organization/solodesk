@@ -15,7 +15,7 @@
     "eval:12cases": "tsx src/eval/run-12case-eval.ts"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.0.0"
   },
   "keywords": [
     "solodesk",
