@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../screens/roadmap_boundaries_screen.dart';
 import '../theme/colors.dart';
 
 class AppSidebar extends StatelessWidget {
@@ -252,6 +253,55 @@ class AppSidebar extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => Dialog(
+                        backgroundColor: SoloDeskColors.background,
+                        insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: const SizedBox(
+                            width: 1000,
+                            height: 700,
+                            child: RoadmapBoundariesScreen(),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0x1AFFFFFF),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0x33FFFFFF)),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.layers_outlined, size: 12, color: Color(0xFFFDE68A)),
+                        SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            'v0.1.0-challenge (Frozen)',
+                            style: TextStyle(
+                              color: Color(0xFFFDE68A),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.3,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),

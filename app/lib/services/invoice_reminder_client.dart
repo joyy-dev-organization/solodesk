@@ -10,6 +10,7 @@ class InvoiceReminderClient {
   final int port;
   final HttpClient? _customHttpClient;
   HttpClientRequest? _activeRequest;
+  bool _isCancelled = false;
 
   InvoiceReminderClient({
     this.host = '127.0.0.1',
@@ -21,6 +22,7 @@ class InvoiceReminderClient {
 
   /// Aborts any in-flight reminder generation HTTP request to free daemon concurrency locks
   void cancelActiveRequest() {
+    _isCancelled = true;
     try {
       _activeRequest?.abort();
     } catch (_) {}
@@ -64,6 +66,7 @@ class InvoiceReminderClient {
     String? optionalNotes,
     required bool isRetry,
   }) async {
+    _isCancelled = false;
     final token = await RuntimeTokenDiscovery.getToken();
 
     final payload = <String, dynamic>{
@@ -168,17 +171,26 @@ class InvoiceReminderClient {
           );
       }
     } on HttpException catch (e) {
-      if (e.message.contains('aborted') || e.message.contains('Connection closed')) {
+      if (_isCancelled || e.message.contains('aborted') || e.message.contains('Connection closed')) {
         throw InvoiceReminderException('Request aborted by user', code: 'ABORTED');
       }
       throw InvoiceReminderNetworkException('HTTP error: ${e.message}');
     } on SocketException catch (e) {
+      if (_isCancelled || e.message.contains('aborted') || e.message.contains('closed')) {
+        throw InvoiceReminderException('Request aborted by user', code: 'ABORTED');
+      }
       throw InvoiceReminderNetworkException('Cannot reach local service on $host:$port: ${e.message}');
     } on HandshakeException catch (e) {
+      if (_isCancelled) {
+        throw InvoiceReminderException('Request aborted by user', code: 'ABORTED');
+      }
       throw InvoiceReminderNetworkException('Loopback connection failed: ${e.message}');
     } on InvoiceReminderException {
       rethrow;
     } catch (e) {
+      if (_isCancelled) {
+        throw InvoiceReminderException('Request aborted by user', code: 'ABORTED');
+      }
       if (e is Exception && e.toString().contains('TimeoutException')) {
         throw InvoiceReminderTimeoutException('Local model inference timed out after 90 seconds');
       }

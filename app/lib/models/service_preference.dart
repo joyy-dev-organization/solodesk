@@ -63,7 +63,7 @@ class ServicePreference {
           jsonDecode(map['niches_json'] as String) as List,
         ),
         defaultCurrency: map['default_currency'] as String,
-        businessName: map['business_name'] as String? ?? 'Joyce Ava · Independent freelancer',
+        businessName: map['business_name'] as String? ?? 'ladydiamond · Independent freelancer',
         createdAt: DateTime.parse(map['created_at'] as String),
         updatedAt: DateTime.parse(map['updated_at'] as String),
       );

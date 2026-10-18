@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../screens/roadmap_boundaries_screen.dart';
 import '../services/service_health.dart';
 import '../theme/colors.dart';
 import 'service_health_badge.dart';
@@ -23,7 +24,7 @@ class AppHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 68,
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -63,7 +64,58 @@ class AppHeader extends StatelessWidget {
 
           const Spacer(),
 
-          // 2. Synthetic Demo Data Toggle Button
+          // 2. Feature Freeze Status Pill
+          Tooltip(
+            message: 'SoloDesk v0.1.0-challenge · Feature Freeze Active. Click to view scope boundaries.',
+            child: InkWell(
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => Dialog(
+                    backgroundColor: SoloDeskColors.background,
+                    insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: const SizedBox(
+                        width: 1000,
+                        height: 700,
+                        child: RoadmapBoundariesScreen(),
+                      ),
+                    ),
+                  ),
+                );
+              },
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.ac_unit, size: 12, color: Color(0xFFD97706)),
+                    SizedBox(width: 4),
+                    Text(
+                      'Freeze Active',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF92400E),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          // 3. Synthetic Demo Data Toggle Button
           OutlinedButton.icon(
             onPressed: onToggleSyntheticDemo,
             style: OutlinedButton.styleFrom(
@@ -71,11 +123,11 @@ class AppHeader extends StatelessWidget {
               side: BorderSide(
                 color: isSyntheticDemoActive ? SoloDeskColors.primaryLight : SoloDeskColors.borderLine,
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             ),
             icon: Icon(
               isSyntheticDemoActive ? Icons.check_circle : Icons.dataset_outlined,
-              size: 16,
+              size: 15,
               color: isSyntheticDemoActive ? SoloDeskColors.primary : SoloDeskColors.muted,
             ),
             label: Text(
@@ -88,9 +140,9 @@ class AppHeader extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(width: 14),
+          const SizedBox(width: 8),
 
-          // 3. Service Health Indicator Badge
+          // 4. Service Health Indicator Badge
           ServiceHealthBadge(
             healthClient: healthClient,
             enablePolling: enableHealthPolling,

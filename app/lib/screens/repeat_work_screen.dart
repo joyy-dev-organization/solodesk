@@ -886,7 +886,7 @@ class _RepeatWorkScreenState extends State<RepeatWorkScreen> {
                               ),
                             ),
                             const Text(
-                              'Advisory draft · Review before sending',
+                              'Advisory Proposal Draft · Schema-Validated · Review before sending (Not a legally binding contract)',
                               style: TextStyle(fontSize: 11, color: SoloDeskColors.muted),
                             ),
                           ],

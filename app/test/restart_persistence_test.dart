@@ -42,7 +42,7 @@ void main() {
           id: 'default',
           niches: const ['Design & branding', 'Writing & content', 'Consulting'],
           defaultCurrency: 'USD',
-          businessName: 'Joyce Ava Creative',
+          businessName: 'ladydiamond Creative',
           createdAt: now,
           updatedAt: now,
         ));
@@ -130,7 +130,7 @@ void main() {
         // Assert preferences survived
         final prefs = await prefRepo.getPreferences();
         expect(prefs.defaultCurrency, equals('USD'));
-        expect(prefs.businessName, equals('Joyce Ava Creative'));
+        expect(prefs.businessName, equals('ladydiamond Creative'));
         expect(prefs.niches, contains('Consulting'));
 
         // Assert client survived

@@ -488,11 +488,35 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: const Text(
-                  'AI Verified',
+                  'Advisory Evaluation · Schema-Validated',
                   style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: SoloDeskColors.green),
                 ),
               ),
             ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Advisory Notice
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.gavel_rounded, size: 14, color: SoloDeskColors.muted),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Advisory Notice: Boundary classifications are editorial guidance for scope discussions, not legal determinations or automatic contract fee adjustments.',
+                    style: TextStyle(fontSize: 11, color: SoloDeskColors.muted, height: 1.3),
+                  ),
+                ),
+              ],
+            ),
           ),
 
           const SizedBox(height: 12),

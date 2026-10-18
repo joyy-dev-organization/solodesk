@@ -28,7 +28,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
   bool _isSyntheticDemoActive = false;
-  String _businessName = 'Joyce Ava';
+  String _businessName = 'ladydiamond';
 
   static const List<String> screenTitles = [
     'Overview',

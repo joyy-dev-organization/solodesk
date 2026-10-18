@@ -389,7 +389,7 @@ class _PolitePayScreenState extends State<PolitePayScreen> {
                 child: StatCard(
                   label: 'COLLECTED (${entry.key})',
                   value: entry.value.totalPaid.formatted,
-                  note: '${entry.value.paidCount} paid ${entry.value.paidCount == 1 ? "invoice" : "invoices"}',
+                  note: '${entry.value.paidCount} paid (marked locally; no gateway)',
                   icon: Icons.check_circle_outline_rounded,
                   iconColor: SoloDeskColors.green,
                   iconBgColor: SoloDeskColors.greenBg,
@@ -1180,7 +1180,23 @@ class _ReminderDraftModalState extends State<_ReminderDraftModal> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: SoloDeskColors.greenBg,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'Advisory Draft · Schema-Validated (Verified Facts Only)',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: SoloDeskColors.green),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
 
           // Verified Facts Card
           Container(

@@ -9,8 +9,10 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --fileParallelism=false",
-    "eval": "vitest run test/m1-model-spike.test.ts"
+    "test": "vitest run test/health.test.ts test/error-envelope.test.ts",
+    "test:integration": "vitest run --fileParallelism=false",
+    "eval": "vitest run test/m1-model-spike.test.ts",
+    "eval:12cases": "tsx src/eval/run-12case-eval.ts"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -21,7 +23,7 @@
     "ollama",
     "local-ai"
   ],
-  "author": "joyy-dev",
+  "author": "ladydiamond",
   "license": "MIT",
   "dependencies": {
     "@mastra/core": "^1.78.0",

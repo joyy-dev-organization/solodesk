@@ -18,7 +18,7 @@ export const HOST = '127.0.0.1';
 export const SERVICE_VERSION = '0.1.0';
 export const SERVICE_NAME = 'solodesk-service';
 export const MAX_INPUT_CHARS = 8000;
-export const INFERENCE_TIMEOUT_MS = 95000; // 95s bounded timeout (grace margin for cold-start and 75s SLA)
+export const INFERENCE_TIMEOUT_MS = 120000; // 120s bounded timeout (safe margin for CPU inference and 75s SLA)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN_FILE_PATH = path.resolve(__dirname, '..', '.runtime-token');
@@ -221,6 +221,17 @@ export function createServer(): http.Server {
           return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Failed to read request body', false, requestId);
         }
 
+        if (rawBody.length > MAX_INPUT_CHARS) {
+          return sendError(
+            res,
+            400,
+            ErrorCode.INVALID_INPUT,
+            `Request body exceeds maximum size of ${MAX_INPUT_CHARS} characters`,
+            false,
+            requestId
+          );
+        }
+
         let parsedJson: unknown;
         try {
           parsedJson = JSON.parse(rawBody);
@@ -292,6 +303,17 @@ export function createServer(): http.Server {
           rawBody = await readBody(req);
         } catch {
           return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Failed to read request body', false, requestId);
+        }
+
+        if (rawBody.length > MAX_INPUT_CHARS) {
+          return sendError(
+            res,
+            400,
+            ErrorCode.INVALID_INPUT,
+            `Request body exceeds maximum size of ${MAX_INPUT_CHARS} characters`,
+            false,
+            requestId
+          );
         }
 
         let parsedJson: unknown;

@@ -290,7 +290,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50)); // Completes Future
 
       // State is now Success
-      expect(find.text('AI Verified'), findsOneWidget);
+      expect(find.text('Advisory Draft · Schema-Validated'), findsOneWidget);
       expect(find.text('Modern minimalist logo for coffee brand'), findsOneWidget);
       expect(find.textContaining('What specific cup dimensions'), findsOneWidget);
       expect(find.textContaining('Cup printing specifications'), findsOneWidget);

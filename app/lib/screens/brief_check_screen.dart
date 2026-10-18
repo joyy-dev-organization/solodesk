@@ -994,7 +994,7 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: const Text(
-                      'AI Verified',
+                      'Advisory Draft · Schema-Validated',
                       style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: SoloDeskColors.green),
                     ),
                   ),
@@ -1026,6 +1026,30 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
               ),
             ),
           ],
+
+          const SizedBox(height: 12),
+
+          // Advisory Notice
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.gavel_rounded, size: 14, color: SoloDeskColors.muted),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Advisory Guidance: Suggested scope items and clarifying questions are editorial recommendations for freelancer-client alignment. SoloDesk does not provide legal advice or legally binding contracts.',
+                    style: TextStyle(fontSize: 11, color: SoloDeskColors.muted, height: 1.3),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
           const SizedBox(height: 14),
 
