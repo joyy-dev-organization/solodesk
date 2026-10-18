@@ -37,9 +37,8 @@ void main() {
 
     test('Schema V2 Migration: invoices table exists and schema_migrations records v2', () async {
       final migrations = await dbService.db.query('schema_migrations', orderBy: 'version ASC');
-      expect(migrations.length, 2);
-      expect(migrations[0]['version'], 1);
-      expect(migrations[1]['version'], 2);
+      expect(migrations.length, greaterThanOrEqualTo(2));
+      expect(migrations.map((m) => m['version']), containsAll([1, 2]));
 
       // Verify table exists by querying empty list
       final invoices = await invoiceRepo.getInvoices();

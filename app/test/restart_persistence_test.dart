@@ -12,6 +12,8 @@ import 'package:solodesk/models/client.dart';
 import 'package:solodesk/models/project.dart';
 import 'package:solodesk/models/money.dart';
 import 'package:solodesk/models/scope_item.dart';
+import 'package:solodesk/models/lead.dart';
+import 'package:solodesk/db/lead_repository.dart';
 
 void main() {
   setUpAll(() {
@@ -76,6 +78,21 @@ void main() {
         );
         await scopeRepo.approveVersion(draft.version.id);
 
+        // Save lead
+        final leadRepo = LeadRepository(dbService.db);
+        await leadRepo.createLead(Lead(
+          id: 'lead-restart-1',
+          contactName: 'Horizon Fintech',
+          serviceNiche: 'Design & branding',
+          stage: LeadStage.proposalSent,
+          estimatedValue: const Money(minorUnits: 450000, currency: 'USD'),
+          nextFollowUpDate: DateTime(2026, 10, 25),
+          notes: 'Sent formal proposal for multi-platform design refresh.',
+          isSynthetic: false,
+          createdAt: now,
+          updatedAt: now,
+        ));
+
         // Explicitly close DB to simulate complete process exit
         await dbService.close();
       }
@@ -113,10 +130,29 @@ void main() {
         expect(approvedScope.items.length, equals(2));
         expect(approvedScope.items.map((i) => i.description), containsAll(['5 Instagram carousels', 'Ad spend management']));
 
+        // Assert lead survived cold restart intact
+        final leadRepo = LeadRepository(reopenedDbService.db);
+        final lead = await leadRepo.getLeadById('lead-restart-1');
+        expect(lead, isNotNull);
+        expect(lead!.contactName, equals('Horizon Fintech'));
+        expect(lead.serviceNiche, equals('Design & branding'));
+        expect(lead.stage, equals(LeadStage.proposalSent));
+        expect(lead.estimatedValue?.minorUnits, equals(450000));
+        expect(lead.estimatedValue?.currency, equals('USD'));
+        expect(lead.nextFollowUpDate, equals(DateTime(2026, 10, 25)));
+        expect(lead.notes, equals('Sent formal proposal for multi-platform design refresh.'));
+        expect(lead.isSynthetic, isFalse);
+
         await reopenedDbService.close();
       }
     } finally {
-      await tempDir.delete(recursive: true);
+      try {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      } catch (_) {
+        // Windows SQLite file lock release timing safeguard
+      }
     }
   });
 }

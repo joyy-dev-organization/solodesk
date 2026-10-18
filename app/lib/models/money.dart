@@ -76,6 +76,14 @@ class Money {
         return '₦$major.$minor';
       case 'GHS':
         return 'GH₵$major.$minor';
+      case 'KES':
+        return 'KSh $major.$minor';
+      case 'ZAR':
+        return 'R $major.$minor';
+      case 'CAD':
+        return 'CA\$$major.$minor';
+      case 'AUD':
+        return 'A\$$major.$minor';
       default:
         return '$currency $major.$minor';
     }

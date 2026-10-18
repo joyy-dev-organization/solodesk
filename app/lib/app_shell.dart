@@ -9,6 +9,7 @@ import 'screens/brief_check_screen.dart';
 import 'screens/scope_shield_screen.dart';
 import 'screens/roadmap_screen.dart';
 import 'screens/polite_pay_screen.dart';
+import 'screens/lead_loop_screen.dart';
 
 class AppShell extends StatefulWidget {
   final ServiceHealthClient healthClient;
@@ -129,7 +130,10 @@ class _AppShellState extends State<AppShell> {
                         onNavigate: (index) => setState(() => _selectedIndex = index),
                         isSyntheticDemoActive: _isSyntheticDemoActive,
                       ),
-                      const LeadLoopScreen(),
+                      LeadLoopScreen(
+                        isSyntheticDemoActive: _isSyntheticDemoActive,
+                        onNavigate: (index) => setState(() => _selectedIndex = index),
+                      ),
                       BriefCheckScreen(
                         onScopeApproved: () {
                           // Refresh overview or switch

@@ -6,10 +6,14 @@ import 'package:solodesk/db/database_service.dart';
 import 'package:solodesk/db/client_repository.dart';
 import 'package:solodesk/db/project_repository.dart';
 import 'package:solodesk/db/scope_repository.dart';
+import 'package:solodesk/db/invoice_repository.dart';
+import 'package:solodesk/db/lead_repository.dart';
 import 'package:solodesk/models/client.dart';
 import 'package:solodesk/models/project.dart';
 import 'package:solodesk/models/money.dart';
 import 'package:solodesk/models/scope_item.dart';
+import 'package:solodesk/models/invoice.dart';
+import 'package:solodesk/models/lead.dart';
 
 void main() {
   setUpAll(() {
@@ -125,6 +129,131 @@ void main() {
 
         // Close V2 database
         await dbV2.close();
+      }
+    } finally {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    }
+  });
+
+  test('Database schema upgrade from v2 to v3 preserves invoices and creates leads table', () async {
+    final tempDir = await Directory.systemTemp.createTemp('solodesk_upgrade_v3_test_');
+    final dbFile = p.join(tempDir.path, 'upgrade_v3_test.db');
+
+    try {
+      // 1. Initialize database at Schema Version 2 (M5 baseline)
+      {
+        final dbV2 = await DatabaseService.openPath(dbFile, version: 2);
+        final clientRepo = ClientRepository(dbV2.db);
+        final projectRepo = ProjectRepository(dbV2.db);
+        final invoiceRepo = InvoiceRepository(dbV2.db);
+
+        // Verify user_version is 2
+        final userVerRes = await dbV2.db.rawQuery('PRAGMA user_version;');
+        expect(userVerRes.first.values.first, equals(2));
+
+        // Verify leads table does NOT exist in V2
+        final tablesV2 = await dbV2.db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='leads';",
+        );
+        expect(tablesV2, isEmpty);
+
+        // Insert V2 data
+        final now = DateTime.now().toUtc();
+        await clientRepo.createClient(Client(
+          id: 'c-v2-1',
+          name: 'V2 Media Client',
+          initials: 'VM',
+          createdAt: now,
+          updatedAt: now,
+        ));
+
+        await projectRepo.createProject(Project(
+          id: 'p-v2-1',
+          clientId: 'c-v2-1',
+          name: 'V2 Project',
+          niche: 'Writing & content',
+          budget: const Money(minorUnits: 15000000, currency: 'NGN'),
+          status: 'active',
+          createdAt: now,
+          updatedAt: now,
+        ));
+
+        await invoiceRepo.createInvoice(Invoice(
+          id: 'inv-v2-1',
+          clientId: 'c-v2-1',
+          projectId: 'p-v2-1',
+          invoiceNumber: 'INV-2026-V2',
+          amount: const Money(minorUnits: 15000000, currency: 'NGN'),
+          issueDate: now,
+          dueDate: now.add(const Duration(days: 7)),
+          status: InvoiceStatus.unpaid,
+          createdAt: now,
+          updatedAt: now,
+        ));
+
+        // Close V2 database
+        await dbV2.close();
+      }
+
+      // 2. Open database at Schema Version 3 (triggers onUpgrade from 2 to 3)
+      {
+        final dbV3 = await DatabaseService.openPath(dbFile, version: 3);
+        final clientRepo = ClientRepository(dbV3.db);
+        final invoiceRepo = InvoiceRepository(dbV3.db);
+        final leadRepo = LeadRepository(dbV3.db);
+
+        // Verify user_version is now 3
+        final userVerRes = await dbV3.db.rawQuery('PRAGMA user_version;');
+        expect(userVerRes.first.values.first, equals(3));
+
+        // Verify leads table now EXISTS in V3
+        final tablesV3 = await dbV3.db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='leads';",
+        );
+        expect(tablesV3, isNotEmpty);
+
+        // Verify schema_migrations audit log records v1, v2, and v3
+        final migrationRows = await dbV3.db.query(
+          'schema_migrations',
+          orderBy: 'version ASC',
+        );
+        expect(migrationRows.length, equals(3));
+        expect(migrationRows[2]['version'], equals(3));
+        expect(migrationRows[2]['description'], contains('leads table'));
+
+        // Verify V2 invoice survived
+        final invoice = await invoiceRepo.getInvoiceById('inv-v2-1');
+        expect(invoice, isNotNull);
+        expect(invoice!.invoiceNumber, equals('INV-2026-V2'));
+        expect(invoice.amount.minorUnits, equals(15000000));
+
+        // Verify V2 client survived
+        final client = await clientRepo.getClientById('c-v2-1');
+        expect(client, isNotNull);
+        expect(client!.name, equals('V2 Media Client'));
+
+        // Verify creating a lead in V3 works
+        final now = DateTime.now().toUtc();
+        await leadRepo.createLead(Lead(
+          id: 'lead-v3-1',
+          clientId: 'c-v2-1',
+          contactName: 'V3 Lead Contact',
+          serviceNiche: 'Writing & content',
+          stage: LeadStage.discovery,
+          estimatedValue: const Money(minorUnits: 20000000, currency: 'NGN'),
+          nextFollowUpDate: DateTime(2026, 10, 25),
+          createdAt: now,
+          updatedAt: now,
+        ));
+
+        final lead = await leadRepo.getLeadById('lead-v3-1');
+        expect(lead, isNotNull);
+        expect(lead!.contactName, equals('V3 Lead Contact'));
+        expect(lead.stage, equals(LeadStage.discovery));
+
+        await dbV3.close();
       }
     } finally {
       if (await tempDir.exists()) {

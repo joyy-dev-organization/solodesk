@@ -26,6 +26,8 @@ class _OverviewScreenState extends State<OverviewScreen> {
   int _totalClientsCount = 0;
   int _approvedScopesCount = 0;
   int _unpaidInvoicesCount = 0;
+  int _activeLeadsCount = 0;
+  int _followUpsDueCount = 0;
   List<Project> _recentProjects = [];
   Map<String, Client> _clientMap = {};
   bool _isLoading = false;
@@ -65,6 +67,8 @@ class _OverviewScreenState extends State<OverviewScreen> {
         _totalClientsCount = metrics.totalClients;
         _approvedScopesCount = metrics.approvedScopes;
         _unpaidInvoicesCount = metrics.unpaidInvoices;
+        _activeLeadsCount = metrics.activeLeads;
+        _followUpsDueCount = metrics.followUpsDue;
         _recentProjects = projects.take(5).toList();
         _clientMap = map;
         _isLoading = false;
@@ -576,7 +580,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
 
           const SizedBox(height: 24),
 
-          // 2. Metrics Grid (4 Stat Cards)
+          // 2. Metrics Grid (5 Stat Cards)
           Row(
             children: [
               Expanded(
@@ -589,7 +593,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                   iconBgColor: SoloDeskColors.primaryPale,
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: StatCard(
                   label: 'Total clients',
@@ -600,7 +604,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                   iconBgColor: SoloDeskColors.blueBg,
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: StatCard(
                   label: 'Approved scopes',
@@ -611,7 +615,19 @@ class _OverviewScreenState extends State<OverviewScreen> {
                   iconBgColor: SoloDeskColors.greenBg,
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
+              Expanded(
+                child: StatCard(
+                  label: 'Follow-ups due',
+                  value: _followUpsDueCount.toString().padLeft(2, '0'),
+                  note: widget.isSyntheticDemoActive ? '$_activeLeadsCount active leads (demo)' : '$_activeLeadsCount active leads',
+                  icon: Icons.person_search_outlined,
+                  iconColor: SoloDeskColors.blue,
+                  iconBgColor: SoloDeskColors.blueBg,
+                  onTap: () => widget.onNavigate(1),
+                ),
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: StatCard(
                   label: 'Invoices due',
@@ -956,6 +972,12 @@ class _OverviewScreenState extends State<OverviewScreen> {
                             onTap: _showAddClientDialog,
                           ),
                           _QuickActionButton(
+                            icon: Icons.people_outline,
+                            title: 'Track leads',
+                            subtitle: 'Follow-up pipeline',
+                            onTap: () => widget.onNavigate(1),
+                          ),
+                          _QuickActionButton(
                             icon: Icons.assignment_outlined,
                             title: 'Check brief',
                             subtitle: 'Find gaps',
@@ -966,6 +988,12 @@ class _OverviewScreenState extends State<OverviewScreen> {
                             title: 'Review scope',
                             subtitle: 'Check agreement',
                             onTap: () => widget.onNavigate(3),
+                          ),
+                          _QuickActionButton(
+                            icon: Icons.attach_money_outlined,
+                            title: 'Track invoices',
+                            subtitle: 'Polite reminders',
+                            onTap: () => widget.onNavigate(4),
                           ),
                           _QuickActionButton(
                             icon: Icons.settings_outlined,

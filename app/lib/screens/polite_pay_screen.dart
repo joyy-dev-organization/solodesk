@@ -787,13 +787,16 @@ class _CreateInvoiceDialogState extends State<_CreateInvoiceDialog> {
   final DateTime _issueDate = DateTime.now();
   DateTime _dueDate = DateTime.now().add(const Duration(days: 14));
 
-  static const List<String> supportedCurrencies = ['USD', 'EUR', 'GBP', 'NGN', 'CAD', 'AUD'];
+  static const List<String> supportedCurrencies = [
+    'USD', 'EUR', 'GBP', 'NGN', 'KES', 'GHS', 'ZAR', 'CAD', 'AUD',
+  ];
 
   @override
   void initState() {
     super.initState();
     _selectedClientId = widget.clients.first.id;
-    _selectedCurrency = supportedCurrencies.contains(widget.defaultCurrency) ? widget.defaultCurrency : 'USD';
+    final prefCurr = widget.defaultCurrency.trim().toUpperCase();
+    _selectedCurrency = prefCurr.isNotEmpty ? prefCurr : 'USD';
     final randomSuffix = (100 + (DateTime.now().millisecondsSinceEpoch % 900)).toString();
     _invoiceNumberController = TextEditingController(text: 'INV-${DateTime.now().year}-$randomSuffix');
   }
@@ -939,7 +942,7 @@ class _CreateInvoiceDialogState extends State<_CreateInvoiceDialog> {
                       child: DropdownButtonFormField<String>(
                         initialValue: _selectedCurrency,
                         decoration: const InputDecoration(labelText: 'Currency *'),
-                        items: supportedCurrencies
+                        items: {...supportedCurrencies, _selectedCurrency}
                             .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                             .toList(),
                         onChanged: (val) {

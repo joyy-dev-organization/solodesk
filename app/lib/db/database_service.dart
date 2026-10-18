@@ -4,7 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class DatabaseService {
-  static const int currentSchemaVersion = 2;
+  static const int currentSchemaVersion = 3;
 
   final Database _db;
 
@@ -72,6 +72,9 @@ class DatabaseService {
       }
       if (v == 2) {
         await _applyV2(db);
+      }
+      if (v == 3) {
+        await _applyV3(db);
       }
     }
   }
@@ -218,6 +221,44 @@ class DatabaseService {
       2,
       DateTime.now().toUtc().toIso8601String(),
       'M5 schema: invoices table with client/project FKs, status, minor units, calendar dates'
+    ]);
+  }
+
+  static Future<void> _applyV3(DatabaseExecutor db) async {
+    // 7. Leads table
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS leads (
+        id TEXT PRIMARY KEY NOT NULL,
+        client_id TEXT REFERENCES clients(id) ON DELETE SET NULL,
+        contact_name TEXT NOT NULL,
+        company TEXT,
+        email TEXT,
+        phone TEXT,
+        service_niche TEXT NOT NULL,
+        stage TEXT NOT NULL CHECK(stage IN ('discovery', 'proposal_sent', 'in_discussion', 'won', 'lost')),
+        estimated_value_minor_units INTEGER CHECK(estimated_value_minor_units IS NULL OR estimated_value_minor_units >= 0),
+        currency TEXT CHECK(currency IS NULL OR length(currency) = 3),
+        next_follow_up_date TEXT CHECK(next_follow_up_date IS NULL OR length(next_follow_up_date) = 10),
+        notes TEXT,
+        is_synthetic INTEGER NOT NULL DEFAULT 0 CHECK(is_synthetic IN (0, 1)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_leads_follow_up ON leads(next_follow_up_date);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_leads_synthetic ON leads(is_synthetic);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_leads_client_id ON leads(client_id);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_leads_service_niche ON leads(service_niche);');
+
+    // Record migration in audit log
+    await db.rawInsert('''
+      INSERT INTO schema_migrations (version, applied_at, description)
+      VALUES (?, ?, ?)
+    ''', [
+      3,
+      DateTime.now().toUtc().toIso8601String(),
+      'M6 schema: leads table with stage constraints, optional value, next follow-up calendar date, and synthetic isolation'
     ]);
   }
 
