@@ -6,7 +6,9 @@ import 'scope_repository.dart';
 import 'demo_data_repository.dart';
 import 'invoice_repository.dart';
 import 'lead_repository.dart';
+import 'service_plan_repository.dart';
 import '../models/lead.dart';
+import '../models/service_plan.dart';
 
 class RepositoryScope extends InheritedWidget {
   final IPreferenceRepository preferenceRepo;
@@ -16,6 +18,7 @@ class RepositoryScope extends InheritedWidget {
   final IDemoDataRepository demoDataRepo;
   final IInvoiceRepository invoiceRepo;
   final ILeadRepository leadRepo;
+  final IServicePlanRepository servicePlanRepo;
 
   RepositoryScope({
     super.key,
@@ -26,10 +29,13 @@ class RepositoryScope extends InheritedWidget {
     required this.demoDataRepo,
     required this.invoiceRepo,
     ILeadRepository? leadRepo,
+    IServicePlanRepository? servicePlanRepo,
     required super.child,
-  }) : leadRepo = leadRepo ?? _defaultLeadRepo;
+  })  : leadRepo = leadRepo ?? _defaultLeadRepo,
+        servicePlanRepo = servicePlanRepo ?? _defaultServicePlanRepo;
 
   static final ILeadRepository _defaultLeadRepo = _NoopLeadRepository();
+  static final IServicePlanRepository _defaultServicePlanRepo = _NoopServicePlanRepository();
 
   static RepositoryScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<RepositoryScope>();
@@ -79,4 +85,53 @@ class _NoopLeadRepository implements ILeadRepository {
   Future<void> updateLead(Lead lead) async {}
   @override
   Future<void> updateLeadStage(String id, LeadStage newStage) async {}
+}
+
+class _NoopServicePlanRepository implements IServicePlanRepository {
+  @override
+  Future<void> createPlan(ServicePlan plan) async {}
+  @override
+  Future<void> deletePlan(String id) async {}
+  @override
+  Future<ServicePlan?> getPlanById(String id) async => null;
+  @override
+  Future<Map<PlanStatus, int>> getPlanCountsByStatus({bool includeSynthetic = true}) async => {};
+  @override
+  Future<List<ServicePlan>> getPlans({
+    String? clientId,
+    PlanStatus? status,
+    PlanCadence? cadence,
+    String? serviceNiche,
+    bool includeSynthetic = true,
+    String? searchQuery,
+  }) async => [];
+  @override
+  Future<List<ServicePlanWithClient>> getPlansWithClient({
+    String? clientId,
+    PlanStatus? status,
+    PlanCadence? cadence,
+    String? serviceNiche,
+    bool includeSynthetic = true,
+    String? searchQuery,
+  }) async => [];
+  @override
+  Future<ServicePlanSummary> getPlanSummary({
+    bool includeSynthetic = true,
+    DateTime? referenceDate,
+  }) async =>
+      const ServicePlanSummary(
+        totalPlans: 0,
+        activePlans: 0,
+        pausedPlans: 0,
+        draftPlans: 0,
+        completedPlans: 0,
+        cancelledPlans: 0,
+        renewalsDueCount: 0,
+        recurringMonthlyRevenueByCurrency: {},
+        activeNominalValueByCurrency: {},
+      );
+  @override
+  Future<void> updatePlan(ServicePlan plan) async {}
+  @override
+  Future<void> updatePlanStatus(String id, PlanStatus status) async {}
 }

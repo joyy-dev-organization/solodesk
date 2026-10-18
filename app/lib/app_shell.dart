@@ -7,9 +7,9 @@ import 'screens/overview_screen.dart';
 import 'screens/my_services_screen.dart';
 import 'screens/brief_check_screen.dart';
 import 'screens/scope_shield_screen.dart';
-import 'screens/roadmap_screen.dart';
 import 'screens/polite_pay_screen.dart';
 import 'screens/lead_loop_screen.dart';
+import 'screens/repeat_work_screen.dart';
 
 class AppShell extends StatefulWidget {
   final ServiceHealthClient healthClient;
@@ -147,7 +147,10 @@ class _AppShellState extends State<AppShell> {
                       PolitePayScreen(
                         isSyntheticDemoActive: _isSyntheticDemoActive,
                       ),
-                      const RepeatWorkScreen(),
+                      RepeatWorkScreen(
+                        isSyntheticDemoActive: _isSyntheticDemoActive,
+                        onNavigate: (index) => setState(() => _selectedIndex = index),
+                      ),
                       MyServicesScreen(
                         onSaved: () => _initPreferencesAndDemoState(),
                       ),

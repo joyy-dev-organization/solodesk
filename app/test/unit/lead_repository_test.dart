@@ -30,11 +30,10 @@ void main() {
 
     test('Schema V3 Migration: leads table exists and schema_migrations records v3', () async {
       final migrations = await dbService.db.query('schema_migrations', orderBy: 'version ASC');
-      expect(migrations.length, equals(3));
-      expect(migrations[0]['version'], equals(1));
-      expect(migrations[1]['version'], equals(2));
-      expect(migrations[2]['version'], equals(3));
-      expect(migrations[2]['description'], contains('leads table'));
+      expect(migrations.length, greaterThanOrEqualTo(3));
+      expect(migrations.map((m) => m['version']), containsAll([1, 2, 3]));
+      final v3Migration = migrations.firstWhere((m) => m['version'] == 3);
+      expect(v3Migration['description'], contains('leads table'));
 
       // Verify table exists by querying empty list
       final leads = await leadRepo.getLeads();

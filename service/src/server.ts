@@ -7,9 +7,11 @@ import { checkOllamaReadiness, ACTIVE_MODEL_ID } from './model.js';
 import { runBriefCheck, briefCheckWorkflow } from './workflows/brief-check.js';
 import { runScopeCheck, scopeCheckWorkflow } from './workflows/scope-check.js';
 import { invoiceReminderWorkflow } from './workflows/invoice-reminder.js';
+import { runOfferDraft, offerDraftWorkflow } from './workflows/offer-draft.js';
 import { BriefCheckInputSchema } from './schemas/brief-check.schema.js';
 import { ScopeCheckInputSchema } from './schemas/scope-check.schema.js';
 import { InvoiceReminderInputSchema } from './schemas/invoice-reminder.schema.js';
+import { OfferDraftInputSchema } from './schemas/offer-draft.schema.js';
 
 export const PORT = 3141;
 export const HOST = '127.0.0.1';
@@ -184,6 +186,12 @@ export function createServer(): http.Server {
       url.pathname === '/v1/invoice-reminder' ||
       url.pathname === '/v1/reminder-draft' ||
       url.pathname === '/api/reminder-draft'
+    );
+    const isOfferDraft = req.method === 'POST' && (
+      url.pathname === '/v1/offer-draft' ||
+      url.pathname === '/api/offer-draft' ||
+      url.pathname === '/v1/service-plan-offer' ||
+      url.pathname === '/api/service-plan-offer'
     );
 
     if (!authenticate(req)) {
@@ -402,6 +410,95 @@ export function createServer(): http.Server {
 
         const runPromise = (async () => {
           const run = await invoiceReminderWorkflow.createRun({ runId: requestId });
+          activeRun = run;
+          const executionResult = await run.start({ inputData: validated.data });
+          if (executionResult.status !== 'success') {
+            const failureMsg = (executionResult as any).error?.message || 'Workflow run failed';
+            throw new Error(failureMsg);
+          }
+          return executionResult.result;
+        })();
+
+        const result = await Promise.race([runPromise, timeoutPromise]);
+        return sendJson(res, 200, { requestId, data: result });
+      } catch (err) {
+        if (activeRun && typeof activeRun.cancel === 'function') {
+          await activeRun.cancel().catch(() => {});
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg === 'TIMEOUT_EXCEEDED') {
+          return sendError(res, 504, ErrorCode.TIMEOUT, `Inference exceeded maximum timeout of ${INFERENCE_TIMEOUT_MS / 1000} seconds`, true, requestId);
+        }
+        if (msg.includes('INVALID_OUTPUT')) {
+          return sendError(res, 502, ErrorCode.INVALID_OUTPUT, msg, true, requestId);
+        }
+        return sendError(res, 500, ErrorCode.MODEL_UNAVAILABLE, `Inference execution failed: ${msg}`, true, requestId);
+      } finally {
+        isInferenceBusy = false;
+      }
+    }
+
+    if (isOfferDraft) {
+      let rawBody: string;
+      try {
+        rawBody = await readBody(req);
+      } catch {
+        return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Failed to read request body', false, requestId);
+      }
+
+      if (rawBody.length > MAX_INPUT_CHARS) {
+        return sendError(
+          res,
+          400,
+          ErrorCode.INVALID_INPUT,
+          `Request body exceeds maximum size of ${MAX_INPUT_CHARS} characters`,
+          false,
+          requestId
+        );
+      }
+
+      let parsedJson: unknown;
+      try {
+        parsedJson = JSON.parse(rawBody);
+      } catch {
+        return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Malformed JSON in request body', false, requestId);
+      }
+
+      const validated = OfferDraftInputSchema.safeParse(parsedJson);
+      if (!validated.success) {
+        const errorMsg = validated.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
+        return sendError(res, 400, ErrorCode.INVALID_INPUT, errorMsg, false, requestId);
+      }
+
+      const ollama = await checkOllamaReadiness();
+      if (!ollama.available) {
+        return sendError(res, 503, ErrorCode.MODEL_UNAVAILABLE, 'Local Ollama service is not running on 127.0.0.1:11434', true, requestId);
+      }
+      if (!ollama.modelReady) {
+        return sendError(res, 503, ErrorCode.MODEL_NOT_FOUND, `Required model ${ACTIVE_MODEL_ID} is not pulled in local Ollama`, false, requestId);
+      }
+
+      if (isInferenceBusy) {
+        return sendError(
+          res,
+          429,
+          ErrorCode.BUSY,
+          'Another inference task is currently executing. SoloDesk enforces single concurrency.',
+          true,
+          requestId
+        );
+      }
+      isInferenceBusy = true;
+      let activeRun: any = null;
+
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), INFERENCE_TIMEOUT_MS);
+          timer.unref();
+        });
+
+        const runPromise = (async () => {
+          const run = await offerDraftWorkflow.createRun({ runId: requestId });
           activeRun = run;
           const executionResult = await run.start({ inputData: validated.data });
           if (executionResult.status !== 'success') {

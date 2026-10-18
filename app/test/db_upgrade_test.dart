@@ -14,6 +14,8 @@ import 'package:solodesk/models/money.dart';
 import 'package:solodesk/models/scope_item.dart';
 import 'package:solodesk/models/invoice.dart';
 import 'package:solodesk/models/lead.dart';
+import 'package:solodesk/db/service_plan_repository.dart';
+import 'package:solodesk/models/service_plan.dart';
 
 void main() {
   setUpAll(() {
@@ -254,6 +256,123 @@ void main() {
         expect(lead.stage, equals(LeadStage.discovery));
 
         await dbV3.close();
+      }
+    } finally {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    }
+  });
+
+  test('Database schema upgrade from v3 to v4 preserves leads and creates service_plans table', () async {
+    final tempDir = await Directory.systemTemp.createTemp('solodesk_upgrade_v4_test_');
+    final dbFile = p.join(tempDir.path, 'upgrade_v4_test.db');
+
+    try {
+      // 1. Initialize database at Schema Version 3 (M6 baseline)
+      {
+        final dbV3 = await DatabaseService.openPath(dbFile, version: 3);
+        final clientRepo = ClientRepository(dbV3.db);
+        final leadRepo = LeadRepository(dbV3.db);
+
+        // Verify user_version is 3
+        final userVerRes = await dbV3.db.rawQuery('PRAGMA user_version;');
+        expect(userVerRes.first.values.first, equals(3));
+
+        // Verify service_plans table does NOT exist in V3
+        final tablesV3 = await dbV3.db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='service_plans';",
+        );
+        expect(tablesV3, isEmpty);
+
+        // Insert V3 data
+        final now = DateTime.now().toUtc();
+        await clientRepo.createClient(Client(
+          id: 'c-v3-1',
+          name: 'V3 Retainer Client',
+          initials: 'RC',
+          company: 'Retainer Co',
+          createdAt: now,
+          updatedAt: now,
+        ));
+
+        await leadRepo.createLead(Lead(
+          id: 'lead-v3-survives',
+          clientId: 'c-v3-1',
+          contactName: 'Retainer Contact',
+          serviceNiche: 'Design & branding',
+          stage: LeadStage.proposalSent,
+          estimatedValue: const Money(minorUnits: 50000000, currency: 'NGN'),
+          createdAt: now,
+          updatedAt: now,
+        ));
+
+        // Close V3 database
+        await dbV3.close();
+      }
+
+      // 2. Open database at Schema Version 4 (triggers onUpgrade from 3 to 4)
+      {
+        final dbV4 = await DatabaseService.openPath(dbFile, version: 4);
+        final clientRepo = ClientRepository(dbV4.db);
+        final leadRepo = LeadRepository(dbV4.db);
+        final planRepo = ServicePlanRepository(dbV4.db);
+
+        // Verify user_version is now 4
+        final userVerRes = await dbV4.db.rawQuery('PRAGMA user_version;');
+        expect(userVerRes.first.values.first, equals(4));
+
+        // Verify service_plans table now EXISTS in V4
+        final tablesV4 = await dbV4.db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='service_plans';",
+        );
+        expect(tablesV4, isNotEmpty);
+
+        // Verify schema_migrations audit log records v1, v2, v3, and v4
+        final migrationRows = await dbV4.db.query(
+          'schema_migrations',
+          orderBy: 'version ASC',
+        );
+        expect(migrationRows.length, equals(4));
+        expect(migrationRows[3]['version'], equals(4));
+        expect(migrationRows[3]['description'], contains('service_plans table'));
+
+        // Verify V3 lead survived intact
+        final survivingLead = await leadRepo.getLeadById('lead-v3-survives');
+        expect(survivingLead, isNotNull);
+        expect(survivingLead!.contactName, equals('Retainer Contact'));
+        expect(survivingLead.estimatedValue!.minorUnits, equals(50000000));
+
+        // Verify V3 client survived intact
+        final survivingClient = await clientRepo.getClientById('c-v3-1');
+        expect(survivingClient, isNotNull);
+        expect(survivingClient!.name, equals('V3 Retainer Client'));
+
+        // Verify creating and querying a service_plan in V4 works
+        final now = DateTime.now().toUtc();
+        await planRepo.createPlan(ServicePlan(
+          id: 'plan-v4-1',
+          clientId: 'c-v3-1',
+          title: 'Brand retainer V4',
+          serviceNiche: 'Design & branding',
+          cadence: PlanCadence.monthly,
+          price: const Money(minorUnits: 50000000, currency: 'NGN'),
+          deliverables: const ['Quarterly Brand Refresh', 'Monthly Assets'],
+          exclusions: const ['Video Shooting'],
+          revisionLimit: '2 rounds',
+          status: PlanStatus.active,
+          createdAt: now,
+          updatedAt: now,
+        ));
+
+        final createdPlan = await planRepo.getPlanById('plan-v4-1');
+        expect(createdPlan, isNotNull);
+        expect(createdPlan!.title, equals('Brand retainer V4'));
+        expect(createdPlan.deliverables.length, equals(2));
+        expect(createdPlan.exclusions.length, equals(1));
+        expect(createdPlan.priceMinorUnits, equals(50000000));
+
+        await dbV4.close();
       }
     } finally {
       if (await tempDir.exists()) {

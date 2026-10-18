@@ -28,6 +28,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
   int _unpaidInvoicesCount = 0;
   int _activeLeadsCount = 0;
   int _followUpsDueCount = 0;
+  int _activePlansCount = 0;
   List<Project> _recentProjects = [];
   Map<String, Client> _clientMap = {};
   bool _isLoading = false;
@@ -69,6 +70,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
         _unpaidInvoicesCount = metrics.unpaidInvoices;
         _activeLeadsCount = metrics.activeLeads;
         _followUpsDueCount = metrics.followUpsDue;
+        _activePlansCount = metrics.activeServicePlans;
         _recentProjects = projects.take(5).toList();
         _clientMap = map;
         _isLoading = false;
@@ -639,6 +641,18 @@ class _OverviewScreenState extends State<OverviewScreen> {
                   onTap: () => widget.onNavigate(4),
                 ),
               ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: StatCard(
+                  label: 'Active retainers',
+                  value: _activePlansCount.toString().padLeft(2, '0'),
+                  note: widget.isSyntheticDemoActive ? 'Demo repeat plans' : 'Active service plans',
+                  icon: Icons.autorenew_outlined,
+                  iconColor: SoloDeskColors.green,
+                  iconBgColor: SoloDeskColors.greenBg,
+                  onTap: () => widget.onNavigate(5),
+                ),
+              ),
             ],
           ),
 
@@ -994,6 +1008,12 @@ class _OverviewScreenState extends State<OverviewScreen> {
                             title: 'Track invoices',
                             subtitle: 'Polite reminders',
                             onTap: () => widget.onNavigate(4),
+                          ),
+                          _QuickActionButton(
+                            icon: Icons.autorenew_outlined,
+                            title: 'Repeat work',
+                            subtitle: 'Retainers & renewals',
+                            onTap: () => widget.onNavigate(5),
                           ),
                           _QuickActionButton(
                             icon: Icons.settings_outlined,

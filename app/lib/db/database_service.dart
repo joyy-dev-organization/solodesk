@@ -4,7 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class DatabaseService {
-  static const int currentSchemaVersion = 3;
+  static const int currentSchemaVersion = 4;
 
   final Database _db;
 
@@ -75,6 +75,9 @@ class DatabaseService {
       }
       if (v == 3) {
         await _applyV3(db);
+      }
+      if (v == 4) {
+        await _applyV4(db);
       }
     }
   }
@@ -259,6 +262,47 @@ class DatabaseService {
       3,
       DateTime.now().toUtc().toIso8601String(),
       'M6 schema: leads table with stage constraints, optional value, next follow-up calendar date, and synthetic isolation'
+    ]);
+  }
+
+  static Future<void> _applyV4(DatabaseExecutor db) async {
+    // 8. Service Plans table (Milestone M7)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS service_plans (
+        id TEXT PRIMARY KEY NOT NULL,
+        client_id TEXT REFERENCES clients(id) ON DELETE SET NULL,
+        title TEXT NOT NULL,
+        service_niche TEXT NOT NULL,
+        cadence TEXT NOT NULL CHECK(cadence IN ('weekly', 'biweekly', 'monthly', 'quarterly', 'annual')),
+        price_minor_units INTEGER NOT NULL CHECK(price_minor_units >= 0),
+        currency TEXT NOT NULL CHECK(length(currency) = 3),
+        status TEXT NOT NULL CHECK(status IN ('draft', 'active', 'paused', 'completed', 'cancelled')),
+        deliverables_json TEXT NOT NULL DEFAULT '[]',
+        exclusions_json TEXT NOT NULL DEFAULT '[]',
+        revision_limit TEXT NOT NULL DEFAULT '2 rounds per deliverable',
+        start_date TEXT CHECK(start_date IS NULL OR length(start_date) = 10),
+        renewal_date TEXT CHECK(renewal_date IS NULL OR length(renewal_date) = 10),
+        notes TEXT,
+        is_synthetic INTEGER NOT NULL DEFAULT 0 CHECK(is_synthetic IN (0, 1)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_service_plans_client_id ON service_plans(client_id);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_service_plans_status ON service_plans(status);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_service_plans_cadence ON service_plans(cadence);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_service_plans_renewal_date ON service_plans(renewal_date);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_service_plans_synthetic ON service_plans(is_synthetic);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_service_plans_service_niche ON service_plans(service_niche);');
+
+    // Record migration in audit log
+    await db.rawInsert('''
+      INSERT INTO schema_migrations (version, applied_at, description)
+      VALUES (?, ?, ?)
+    ''', [
+      4,
+      DateTime.now().toUtc().toIso8601String(),
+      'M7 schema: service_plans table with cadence, price, status constraints, JSON deliverables/exclusions, and synthetic isolation'
     ]);
   }
 

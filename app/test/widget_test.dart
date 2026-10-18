@@ -14,6 +14,7 @@ import 'package:solodesk/models/service_preference.dart';
 import 'package:solodesk/services/service_health.dart';
 import 'helpers/fake_invoice_repository.dart';
 import 'helpers/fake_lead_repository.dart';
+import 'helpers/fake_service_plan_repository.dart';
 
 class FakeServiceHealthClient extends ServiceHealthClient {
   FakeServiceHealthClient() : super(host: '127.0.0.1', port: 3141);
@@ -199,6 +200,7 @@ void main() {
         demoDataRepo: demoDataRepo,
         invoiceRepo: FakeInvoiceRepository(),
         leadRepo: FakeLeadRepository(),
+        servicePlanRepo: FakeServicePlanRepository(),
         healthClient: FakeServiceHealthClient(),
         enableHealthPolling: false,
       );
@@ -232,7 +234,7 @@ void main() {
       expect(find.text('Approved scopes'), findsOneWidget);
     });
 
-    testWidgets('navigating to PolitePay and LeadLoop renders screens, while Repeat Work displays honest "Not included in this release"', (tester) async {
+    testWidgets('navigating to PolitePay, LeadLoop, and Repeat Work renders live screens', (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -250,12 +252,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('LeadLoop ✦'), findsOneWidget);
 
-      // 3. Repeat Work (M7 Placeholder)
+      // 3. Repeat Work (Implemented in M7)
       await tester.tap(find.text('Repeat Work'));
       await tester.pumpAndSettle();
-      expect(find.text('REPEAT WORK'), findsOneWidget);
-      expect(find.text('Not included in this release'), findsOneWidget);
-      expect(find.text('Milestone M7 · P2 Priority'), findsOneWidget);
+      expect(find.text('Repeat Work'), findsWidgets);
+      expect(find.text('+ New service plan'), findsOneWidget);
     });
 
     testWidgets('toggling synthetic demo records seeds and purges records in SQLite', (tester) async {

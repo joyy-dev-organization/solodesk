@@ -10,6 +10,7 @@ import 'db/repository_scope.dart';
 import 'db/scope_repository.dart';
 import 'db/invoice_repository.dart';
 import 'db/lead_repository.dart';
+import 'db/service_plan_repository.dart';
 import 'services/service_health.dart';
 import 'theme/theme.dart';
 
@@ -30,6 +31,7 @@ Future<void> main() async {
   final demoDataRepo = DemoDataRepository(dbService.db);
   final invoiceRepo = InvoiceRepository(dbService.db);
   final leadRepo = LeadRepository(dbService.db);
+  final servicePlanRepo = ServicePlanRepository(dbService.db);
 
   runApp(
     SoloDeskApp(
@@ -40,6 +42,7 @@ Future<void> main() async {
       demoDataRepo: demoDataRepo,
       invoiceRepo: invoiceRepo,
       leadRepo: leadRepo,
+      servicePlanRepo: servicePlanRepo,
     ),
   );
 }
@@ -52,6 +55,7 @@ class SoloDeskApp extends StatelessWidget {
   final IDemoDataRepository demoDataRepo;
   final IInvoiceRepository invoiceRepo;
   final ILeadRepository leadRepo;
+  final IServicePlanRepository servicePlanRepo;
   final ServiceHealthClient? healthClient;
   final bool enableHealthPolling;
 
@@ -64,6 +68,7 @@ class SoloDeskApp extends StatelessWidget {
     required this.demoDataRepo,
     required this.invoiceRepo,
     required this.leadRepo,
+    required this.servicePlanRepo,
     this.healthClient,
     this.enableHealthPolling = true,
   });
@@ -78,6 +83,7 @@ class SoloDeskApp extends StatelessWidget {
       demoDataRepo: demoDataRepo,
       invoiceRepo: invoiceRepo,
       leadRepo: leadRepo,
+      servicePlanRepo: servicePlanRepo,
       child: MaterialApp(
         title: 'SoloDesk',
         debugShowCheckedModeBanner: false,

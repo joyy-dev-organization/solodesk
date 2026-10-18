@@ -7,6 +7,7 @@ import '../models/scope_version.dart';
 import '../models/scope_item.dart';
 import '../models/invoice.dart';
 import '../models/lead.dart';
+import '../models/service_plan.dart';
 
 class OverviewMetrics {
   final int totalClients;
@@ -16,6 +17,8 @@ class OverviewMetrics {
   final int unpaidInvoices;
   final int activeLeads;
   final int followUpsDue;
+  final int activeServicePlans;
+  final Map<String, int> recurringMonthlyRevenueByCurrency;
 
   const OverviewMetrics({
     required this.totalClients,
@@ -25,6 +28,8 @@ class OverviewMetrics {
     this.unpaidInvoices = 0,
     this.activeLeads = 0,
     this.followUpsDue = 0,
+    this.activeServicePlans = 0,
+    this.recurringMonthlyRevenueByCurrency = const {},
   });
 }
 
@@ -314,12 +319,131 @@ class DemoDataRepository implements IDemoDataRepository {
     );
     batch.insert('leads', lead4.toDbMap());
 
+    // 6. Synthetic Service Plans (Milestone M7)
+    // Plan 1: Design & branding (Active, Amina Musa, ₦150,000/mo)
+    final plan1 = ServicePlan(
+      id: uuid.v4(),
+      clientId: client1Id,
+      title: 'Brand Asset Maintenance & Social Kit Retainer',
+      serviceNiche: 'Design & branding',
+      cadence: PlanCadence.monthly,
+      price: const Money(minorUnits: 15000000, currency: 'NGN'),
+      status: PlanStatus.active,
+      deliverables: const [
+        '8 Social media graphic templates (Canva / Figma)',
+        '2 Promotional banner variants for web/print',
+        'Monthly visual asset brand compliance review',
+        'Vector exports in SVG, PNG, and PDF formats',
+      ],
+      exclusions: const [
+        'Complete brand identity redesign or pivot',
+        'Video motion graphics or 3D animations',
+        'Paid social advertising setup or management',
+      ],
+      revisionLimit: '2 revision cycles per monthly batch',
+      startDate: now.subtract(const Duration(days: 30)),
+      renewalDate: now.add(const Duration(days: 20)),
+      notes: 'Ongoing monthly creative support following successful M2 brand launch.',
+      isSynthetic: true,
+      createdAt: now.subtract(const Duration(days: 30)),
+      updatedAt: now.subtract(const Duration(days: 30)),
+    );
+    batch.insert('service_plans', plan1.toDbMap());
+
+    // Plan 2: Writing & content (Active, Northstar Media, ₦120,000/mo, renewal in 4 days)
+    final plan2 = ServicePlan(
+      id: uuid.v4(),
+      clientId: client2Id,
+      title: 'Monthly Editorial Sprint & Subscriber Newsletter',
+      serviceNiche: 'Writing & content',
+      cadence: PlanCadence.monthly,
+      price: const Money(minorUnits: 12000000, currency: 'NGN'),
+      status: PlanStatus.active,
+      deliverables: const [
+        '4 In-depth industry blog posts (1,200 words each)',
+        '2 Bi-weekly subscriber newsletters with curated links',
+        'SEO meta descriptions and 3 social snippet options per post',
+      ],
+      exclusions: const [
+        'Live podcast interview transcription',
+        'Direct CMS publication and link checking',
+        'Ghostwriting long-form whitepapers or eBooks',
+      ],
+      revisionLimit: '1 revision cycle within 48 hours of draft delivery',
+      startDate: now.subtract(const Duration(days: 60)),
+      renewalDate: now.add(const Duration(days: 4)),
+      notes: 'Net-14 terms tied to monthly content calendar.',
+      isSynthetic: true,
+      createdAt: now.subtract(const Duration(days: 60)),
+      updatedAt: now.subtract(const Duration(days: 2)),
+    );
+    batch.insert('service_plans', plan2.toDbMap());
+
+    // Plan 3: Consulting & coaching (Active, FitPath Coaching, $950 USD/mo)
+    final plan3 = ServicePlan(
+      id: uuid.v4(),
+      clientId: null,
+      title: 'Executive Strategy & Growth Advisory Retainer',
+      serviceNiche: 'Consulting & coaching',
+      cadence: PlanCadence.monthly,
+      price: const Money(minorUnits: 95000, currency: 'USD'),
+      status: PlanStatus.active,
+      deliverables: const [
+        '2 60-minute 1-on-1 strategic growth advisory sessions',
+        'Async voice memo / Slack office hours support (48h SLA)',
+        'Monthly funnel optimization and conversion audit brief',
+      ],
+      exclusions: const [
+        'Hands-on ad copy implementation',
+        'Direct customer service handling',
+        'Legal, tax, or formal corporate financial advice',
+      ],
+      revisionLimit: 'Follow-up Q&A within 5 business days of each session',
+      startDate: now.subtract(const Duration(days: 45)),
+      renewalDate: now.add(const Duration(days: 15)),
+      notes: 'Quarterly review milestone scheduled at month 3.',
+      isSynthetic: true,
+      createdAt: now.subtract(const Duration(days: 45)),
+      updatedAt: now.subtract(const Duration(days: 45)),
+    );
+    batch.insert('service_plans', plan3.toDbMap());
+
+    // Plan 4: Photography & video (Draft, ₦320,000/quarter)
+    final plan4 = ServicePlan(
+      id: uuid.v4(),
+      clientId: null,
+      title: 'Quarterly Video Repurposing & Short-form Batch',
+      serviceNiche: 'Photography & video',
+      cadence: PlanCadence.quarterly,
+      price: const Money(minorUnits: 32000000, currency: 'NGN'),
+      status: PlanStatus.draft,
+      deliverables: const [
+        '12 Vertical short-form reel/TikTok cuts from existing footage',
+        'Custom cover thumbnails and hook titles for each cut',
+        'Synchronized burnt-in captions and audio normalization',
+      ],
+      exclusions: const [
+        'On-location filming or studio production equipment hire',
+        'Commercial licensing fees for third-party music tracks',
+        'Raw video archival storage exceeding 30 days',
+      ],
+      revisionLimit: '2 edit rounds per short video deliverable',
+      startDate: null,
+      renewalDate: null,
+      notes: 'Draft proposal prepared for prospective podcast creators.',
+      isSynthetic: true,
+      createdAt: now.subtract(const Duration(days: 5)),
+      updatedAt: now.subtract(const Duration(days: 5)),
+    );
+    batch.insert('service_plans', plan4.toDbMap());
+
     await batch.commit(noResult: true);
   }
 
   @override
   Future<void> purgeSyntheticData() async {
     await db.transaction((txn) async {
+      await txn.delete('service_plans', where: 'is_synthetic = 1');
       await txn.delete('leads', where: 'is_synthetic = 1');
       await txn.delete('invoices', where: 'is_synthetic = 1');
       await txn.delete('scope_items', where: 'is_synthetic = 1');
@@ -361,6 +485,23 @@ class DemoDataRepository implements IDemoDataRepository {
       followUpsDue = followRes.first['count'] as int? ?? 0;
     }
 
+    int activeServicePlans = 0;
+    final Map<String, int> mrrByCurrency = {};
+    final planTable = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='service_plans';");
+    if (planTable.isNotEmpty) {
+      final planRes = await db.rawQuery(
+        "SELECT price_minor_units, currency, cadence FROM service_plans WHERE status = 'active' $synAndFilter",
+      );
+      activeServicePlans = planRes.length;
+      for (final row in planRes) {
+        final curr = row['currency'] as String;
+        final units = row['price_minor_units'] as int;
+        final cadence = PlanCadence.fromString(row['cadence'] as String);
+        final monthlyEquiv = (units * cadence.monthlyFactor).round();
+        mrrByCurrency[curr] = (mrrByCurrency[curr] ?? 0) + monthlyEquiv;
+      }
+    }
+
     return OverviewMetrics(
       totalClients: clientsRes.first['count'] as int? ?? 0,
       activeProjects: projectsRes.first['count'] as int? ?? 0,
@@ -369,6 +510,8 @@ class DemoDataRepository implements IDemoDataRepository {
       unpaidInvoices: unpaidInvoices,
       activeLeads: activeLeads,
       followUpsDue: followUpsDue,
+      activeServicePlans: activeServicePlans,
+      recurringMonthlyRevenueByCurrency: mrrByCurrency,
     );
   }
 }

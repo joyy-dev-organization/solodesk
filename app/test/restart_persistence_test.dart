@@ -14,6 +14,8 @@ import 'package:solodesk/models/money.dart';
 import 'package:solodesk/models/scope_item.dart';
 import 'package:solodesk/models/lead.dart';
 import 'package:solodesk/db/lead_repository.dart';
+import 'package:solodesk/models/service_plan.dart';
+import 'package:solodesk/db/service_plan_repository.dart';
 
 void main() {
   setUpAll(() {
@@ -93,6 +95,26 @@ void main() {
           updatedAt: now,
         ));
 
+        // Save service plan (Milestone M7)
+        final planRepo = ServicePlanRepository(dbService.db);
+        await planRepo.createPlan(ServicePlan(
+          id: 'plan-restart-1',
+          clientId: 'client-restart-1',
+          title: 'Monthly Brand Design Retainer',
+          serviceNiche: 'Design & branding',
+          cadence: PlanCadence.monthly,
+          price: const Money(minorUnits: 25000000, currency: 'NGN'),
+          deliverables: const ['4 Infographics', '8 Carousel slides'],
+          exclusions: const ['Custom 3D Blender renders', 'Weekend rush turnarounds'],
+          revisionLimit: '2 rounds per deliverable',
+          status: PlanStatus.active,
+          renewalDate: DateTime(2026, 11, 15),
+          notes: 'Renews every month on 15th.',
+          isSynthetic: false,
+          createdAt: now,
+          updatedAt: now,
+        ));
+
         // Explicitly close DB to simulate complete process exit
         await dbService.close();
       }
@@ -142,6 +164,24 @@ void main() {
         expect(lead.nextFollowUpDate, equals(DateTime(2026, 10, 25)));
         expect(lead.notes, equals('Sent formal proposal for multi-platform design refresh.'));
         expect(lead.isSynthetic, isFalse);
+
+        // Assert service plan survived cold restart 100% intact (M7 Criterion 3)
+        final planRepo = ServicePlanRepository(reopenedDbService.db);
+        final plan = await planRepo.getPlanById('plan-restart-1');
+        expect(plan, isNotNull);
+        expect(plan!.clientId, equals('client-restart-1'));
+        expect(plan.title, equals('Monthly Brand Design Retainer'));
+        expect(plan.serviceNiche, equals('Design & branding'));
+        expect(plan.cadence, equals(PlanCadence.monthly));
+        expect(plan.priceMinorUnits, equals(25000000));
+        expect(plan.currency, equals('NGN'));
+        expect(plan.deliverables, equals(const ['4 Infographics', '8 Carousel slides']));
+        expect(plan.exclusions, equals(const ['Custom 3D Blender renders', 'Weekend rush turnarounds']));
+        expect(plan.revisionLimits, equals('2 rounds per deliverable'));
+        expect(plan.status, equals(PlanStatus.active));
+        expect(plan.renewalDate, equals(DateTime(2026, 11, 15)));
+        expect(plan.notes, equals('Renews every month on 15th.'));
+        expect(plan.isSynthetic, isFalse);
 
         await reopenedDbService.close();
       }
