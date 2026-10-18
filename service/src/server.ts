@@ -16,7 +16,7 @@ export const HOST = '127.0.0.1';
 export const SERVICE_VERSION = '0.1.0';
 export const SERVICE_NAME = 'solodesk-service';
 export const MAX_INPUT_CHARS = 8000;
-export const INFERENCE_TIMEOUT_MS = 75000; // 75s bounded timeout
+export const INFERENCE_TIMEOUT_MS = 95000; // 95s bounded timeout (grace margin for cold-start and 75s SLA)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN_FILE_PATH = path.resolve(__dirname, '..', '.runtime-token');
@@ -77,10 +77,9 @@ export interface SafeErrorEnvelope {
 }
 
 export function safeCompareTokens(a: string, b: string): boolean {
-  const bufA = Buffer.from(a, 'utf8');
-  const bufB = Buffer.from(b, 'utf8');
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
+  const hashA = crypto.createHash('sha256').update(a).digest();
+  const hashB = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
 }
 
 function sendJson(res: http.ServerResponse, statusCode: number, payload: unknown) {
@@ -343,6 +342,45 @@ export function createServer(): http.Server {
     }
 
     if (isInvoiceReminder) {
+      let rawBody: string;
+      try {
+        rawBody = await readBody(req);
+      } catch {
+        return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Failed to read request body', false, requestId);
+      }
+
+      if (rawBody.length > MAX_INPUT_CHARS) {
+        return sendError(
+          res,
+          400,
+          ErrorCode.INVALID_INPUT,
+          `Request body exceeds maximum size of ${MAX_INPUT_CHARS} characters`,
+          false,
+          requestId
+        );
+      }
+
+      let parsedJson: unknown;
+      try {
+        parsedJson = JSON.parse(rawBody);
+      } catch {
+        return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Malformed JSON in request body', false, requestId);
+      }
+
+      const validated = InvoiceReminderInputSchema.safeParse(parsedJson);
+      if (!validated.success) {
+        const errorMsg = validated.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
+        return sendError(res, 400, ErrorCode.INVALID_INPUT, errorMsg, false, requestId);
+      }
+
+      const ollama = await checkOllamaReadiness();
+      if (!ollama.available) {
+        return sendError(res, 503, ErrorCode.MODEL_UNAVAILABLE, 'Local Ollama service is not running on 127.0.0.1:11434', true, requestId);
+      }
+      if (!ollama.modelReady) {
+        return sendError(res, 503, ErrorCode.MODEL_NOT_FOUND, `Required model ${ACTIVE_MODEL_ID} is not pulled in local Ollama`, false, requestId);
+      }
+
       if (isInferenceBusy) {
         return sendError(
           res,
@@ -357,34 +395,6 @@ export function createServer(): http.Server {
       let activeRun: any = null;
 
       try {
-        let rawBody: string;
-        try {
-          rawBody = await readBody(req);
-        } catch {
-          return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Failed to read request body', false, requestId);
-        }
-
-        let parsedJson: unknown;
-        try {
-          parsedJson = JSON.parse(rawBody);
-        } catch {
-          return sendError(res, 400, ErrorCode.INVALID_INPUT, 'Malformed JSON in request body', false, requestId);
-        }
-
-        const validated = InvoiceReminderInputSchema.safeParse(parsedJson);
-        if (!validated.success) {
-          const errorMsg = validated.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
-          return sendError(res, 400, ErrorCode.INVALID_INPUT, errorMsg, false, requestId);
-        }
-
-        const ollama = await checkOllamaReadiness();
-        if (!ollama.available) {
-          return sendError(res, 503, ErrorCode.MODEL_UNAVAILABLE, 'Local Ollama service is not running on 127.0.0.1:11434', true, requestId);
-        }
-        if (!ollama.modelReady) {
-          return sendError(res, 503, ErrorCode.MODEL_NOT_FOUND, `Required model ${ACTIVE_MODEL_ID} is not pulled in local Ollama`, false, requestId);
-        }
-
         const timeoutPromise = new Promise<never>((_, reject) => {
           const timer = setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), INFERENCE_TIMEOUT_MS);
           timer.unref();

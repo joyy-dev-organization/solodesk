@@ -222,6 +222,23 @@ class DemoDataRepository implements IDemoDataRepository {
     );
     batch.insert('invoices', inv3.toDbMap());
 
+    // Invoice 4: Amina Musa, ₦80,000.00 NGN, due today (unpaid)
+    final inv4 = Invoice(
+      id: uuid.v4(),
+      clientId: client1Id,
+      projectId: proj1Id,
+      invoiceNumber: 'INV-2026-004',
+      amount: const Money(minorUnits: 8000000, currency: 'NGN'),
+      issueDate: now.subtract(const Duration(days: 14)),
+      dueDate: now,
+      status: InvoiceStatus.unpaid,
+      notes: 'Final delivery milestone invoice (due today).',
+      isSynthetic: true,
+      createdAt: now.subtract(const Duration(days: 14)),
+      updatedAt: now,
+    );
+    batch.insert('invoices', inv4.toDbMap());
+
     await batch.commit(noResult: true);
   }
 

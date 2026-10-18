@@ -138,6 +138,7 @@ class _AppShellState extends State<AppShell> {
                       ),
                       ScopeShieldScreen(
                         isSyntheticDemoActive: _isSyntheticDemoActive,
+                        onNavigate: (index) => setState(() => _selectedIndex = index),
                       ),
                       PolitePayScreen(
                         isSyntheticDemoActive: _isSyntheticDemoActive,

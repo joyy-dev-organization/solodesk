@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:solodesk/db/repository_scope.dart';
@@ -21,8 +22,9 @@ import '../helpers/fake_invoice_repository.dart';
 class FakeScopeCheckClient extends ScopeCheckClient {
   ScopeCheckResult? stubResult;
   Exception? errorToThrow;
+  Future<ScopeCheckResult> Function()? onCheck;
 
-  FakeScopeCheckClient({this.stubResult, this.errorToThrow})
+  FakeScopeCheckClient({this.stubResult, this.errorToThrow, this.onCheck})
       : super(host: '127.0.0.1', port: 3141);
 
   @override
@@ -32,6 +34,9 @@ class FakeScopeCheckClient extends ScopeCheckClient {
     required List<ScopeItem> scopeItems,
     String niche = 'general',
   }) async {
+    if (onCheck != null) {
+      return await onCheck!();
+    }
     if (errorToThrow != null) {
       throw errorToThrow!;
     }
@@ -228,7 +233,7 @@ void main() {
     demoRepo = TestDemoDataRepo();
   });
 
-  Widget buildTestScreen({ScopeCheckClient? client}) {
+  Widget buildTestScreen({ScopeCheckClient? client, void Function(int index)? onNavigate}) {
     return RepositoryScope(
       clientRepo: clientRepo,
       projectRepo: projectRepo,
@@ -241,6 +246,7 @@ void main() {
           body: ScopeShieldScreen(
             isSyntheticDemoActive: false,
             client: client ?? FakeScopeCheckClient(),
+            onNavigate: onNavigate,
           ),
         ),
       ),
@@ -515,6 +521,134 @@ void main() {
 
       // Client request text is PRESERVED (Zero-loss guarantee)
       expect(find.text(customRequest), findsOneWidget);
+    });
+
+    testWidgets('tapping "Go to BriefCheck" in empty state triggers onNavigate(2) without crash', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      int? navigatedIndex;
+      await tester.pumpWidget(buildTestScreen(onNavigate: (idx) => navigatedIndex = idx));
+      await tester.pumpAndSettle();
+
+      final goToBriefCheckBtn = find.text('Go to BriefCheck');
+      expect(goToBriefCheckBtn, findsOneWidget);
+      await tester.tap(goToBriefCheckBtn);
+      await tester.pumpAndSettle();
+
+      expect(navigatedIndex, 2);
+    });
+
+    testWidgets('cancelling evaluation resets UI to idle and drops late background response', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final now = DateTime.now().toUtc();
+      final project = Project(
+        id: 'proj-1',
+        clientId: 'c-1',
+        name: 'Apex Brand Identity',
+        niche: 'design',
+        budget: const Money(minorUnits: 250000, currency: 'USD'),
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      );
+      projectRepo.projects.add(project);
+      final approvedVersion = ScopeVersion(
+        id: 'ver-1',
+        projectId: project.id,
+        versionNumber: 1,
+        title: 'V1 Initial Scope',
+        status: 'approved',
+        approvedAt: now,
+        isSynthetic: false,
+        createdAt: now,
+      );
+      scopeRepo.versions.add(ScopeVersionWithItems(version: approvedVersion, items: const [
+        ScopeItem(id: 'item-1', scopeVersionId: 'ver-1', category: 'included', description: 'Logo', sortOrder: 0),
+      ]));
+
+      final completer = Completer<ScopeCheckResult>();
+      final delayingClient = FakeScopeCheckClient(onCheck: () => completer.future);
+
+      await tester.pumpWidget(buildTestScreen(client: delayingClient));
+      await tester.pumpAndSettle();
+
+      // Trigger scope check
+      await tester.tap(find.text('⛨ Compare with agreed scope'));
+      await tester.pump(); // Enter loading state
+
+      expect(find.textContaining('Comparing request against approved scope'), findsOneWidget);
+      expect(find.text('Cancel Evaluation'), findsOneWidget);
+
+      // Tap Cancel Evaluation
+      await tester.tap(find.text('Cancel Evaluation'));
+      await tester.pump();
+
+      // UI returns to idle
+      expect(find.text('Scope Boundary Evaluation'), findsOneWidget);
+      expect(find.text('Scope evaluation cancelled.'), findsOneWidget);
+
+      // Complete the background request later
+      completer.complete(ScopeCheckResult(
+        requestId: 'late-req',
+        summary: 'Late response',
+        findings: const [],
+        replyDraft: 'Late draft',
+      ));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // UI MUST REMAIN IDLE (not clobbered by late response)
+      expect(find.text('Scope Boundary Evaluation'), findsOneWidget);
+      expect(find.text('Late draft'), findsNothing);
+    });
+
+    testWidgets('header Refresh Scopes button reloads projects from SQLite', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(buildTestScreen());
+      await tester.pumpAndSettle();
+
+      expect(find.text('No saved project scopes to evaluate'), findsOneWidget);
+
+      // Dynamically add project and approved version to SQLite
+      final now = DateTime.now().toUtc();
+      final project = Project(
+        id: 'proj-new',
+        clientId: 'c-1',
+        name: 'New Client Portal',
+        niche: 'general',
+        budget: const Money(minorUnits: 150000, currency: 'USD'),
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      );
+      projectRepo.projects.add(project);
+      final approvedVersion = ScopeVersion(
+        id: 'ver-new',
+        projectId: project.id,
+        versionNumber: 1,
+        title: 'V1 Scope',
+        status: 'approved',
+        approvedAt: now,
+        isSynthetic: false,
+        createdAt: now,
+      );
+      scopeRepo.versions.add(ScopeVersionWithItems(version: approvedVersion, items: const [
+        ScopeItem(id: 'item-n1', scopeVersionId: 'ver-new', category: 'included', description: 'Wireframes', sortOrder: 0),
+      ]));
+
+      // Tap Refresh Scopes button
+      final refreshBtn = find.byTooltip('Refresh Scopes');
+      expect(refreshBtn, findsOneWidget);
+      await tester.tap(refreshBtn);
+      await tester.pumpAndSettle();
+
+      // Empty state disappears, project is loaded
+      expect(find.text('No saved project scopes to evaluate'), findsNothing);
+      expect(find.textContaining('New Client Portal'), findsWidgets);
     });
   });
 }

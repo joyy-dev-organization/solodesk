@@ -36,8 +36,6 @@ class _PolitePayScreenState extends State<PolitePayScreen> {
   List<InvoiceWithClient> _invoices = [];
   InvoiceTotalsResult? _totalsResult;
   String _statusFilter = 'all'; // 'all', 'unpaid', 'overdue', 'paid'
-  List<Client> _availableClients = [];
-  List<Project> _availableProjects = [];
 
   @override
   void initState() {
@@ -58,31 +56,33 @@ class _PolitePayScreenState extends State<PolitePayScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
 
-    final scope = RepositoryScope.of(context);
-    final allInvoices = await scope.invoiceRepo.getInvoices(
-      includeSynthetic: widget.isSyntheticDemoActive,
-    );
-    final filteredInvoices = await scope.invoiceRepo.getInvoicesWithClient(
-      statusFilter: _statusFilter,
-      includeSynthetic: widget.isSyntheticDemoActive,
-    );
-    final clients = await scope.clientRepo.getClients(
-      includeSynthetic: widget.isSyntheticDemoActive,
-    );
-    final projects = await scope.projectRepo.getProjects(
-      includeSynthetic: widget.isSyntheticDemoActive,
-    );
+    try {
+      final scope = RepositoryScope.of(context);
+      final allInvoices = await scope.invoiceRepo.getInvoices(
+        includeSynthetic: widget.isSyntheticDemoActive,
+      );
+      final filteredInvoices = await scope.invoiceRepo.getInvoicesWithClient(
+        statusFilter: _statusFilter,
+        referenceDate: DateTime.now(),
+        includeSynthetic: widget.isSyntheticDemoActive,
+      );
 
-    final totals = InvoiceTotalsCalculator.calculate(allInvoices);
+      final totals = InvoiceTotalsCalculator.calculate(allInvoices);
 
-    if (mounted) {
-      setState(() {
-        _invoices = filteredInvoices;
-        _totalsResult = totals;
-        _availableClients = clients;
-        _availableProjects = projects;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _invoices = filteredInvoices;
+          _totalsResult = totals;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load invoice data: $e')),
+        );
+      }
     }
   }
 
@@ -138,8 +138,19 @@ class _PolitePayScreenState extends State<PolitePayScreen> {
     }
   }
 
-  void _showCreateInvoiceDialog() {
-    if (_availableClients.isEmpty) {
+  Future<void> _showCreateInvoiceDialog() async {
+    final scope = RepositoryScope.of(context);
+    final clients = await scope.clientRepo.getClients(
+      includeSynthetic: widget.isSyntheticDemoActive,
+    );
+    final projects = await scope.projectRepo.getProjects(
+      includeSynthetic: widget.isSyntheticDemoActive,
+    );
+    final prefs = await scope.preferenceRepo.getPreferences();
+
+    if (!mounted) return;
+
+    if (clients.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please add at least one client in Overview before creating an invoice.')),
       );
@@ -149,8 +160,9 @@ class _PolitePayScreenState extends State<PolitePayScreen> {
     showDialog(
       context: context,
       builder: (ctx) => _CreateInvoiceDialog(
-        clients: _availableClients,
-        projects: _availableProjects,
+        clients: clients,
+        projects: projects,
+        defaultCurrency: prefs.defaultCurrency,
         isSynthetic: widget.isSyntheticDemoActive,
         onCreated: () => loadData(),
       ),
@@ -233,16 +245,32 @@ class _PolitePayScreenState extends State<PolitePayScreen> {
           ),
         ),
         const SizedBox(width: 16),
-        ElevatedButton.icon(
-          onPressed: _showCreateInvoiceDialog,
-          icon: const Icon(Icons.add, size: 18),
-          label: const Text('Create Invoice'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: SoloDeskColors.primary,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            OutlinedButton.icon(
+              onPressed: _isLoading ? null : loadData,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Refresh'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: SoloDeskColors.ink,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            ElevatedButton.icon(
+              onPressed: _showCreateInvoiceDialog,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Create Invoice'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: SoloDeskColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -732,12 +760,14 @@ class _PolitePayScreenState extends State<PolitePayScreen> {
 class _CreateInvoiceDialog extends StatefulWidget {
   final List<Client> clients;
   final List<Project> projects;
+  final String defaultCurrency;
   final bool isSynthetic;
   final VoidCallback onCreated;
 
   const _CreateInvoiceDialog({
     required this.clients,
     required this.projects,
+    this.defaultCurrency = 'USD',
     required this.isSynthetic,
     required this.onCreated,
   });
@@ -753,7 +783,7 @@ class _CreateInvoiceDialogState extends State<_CreateInvoiceDialog> {
   late final TextEditingController _invoiceNumberController;
   final TextEditingController _amountController = TextEditingController(text: '1500.00');
   final TextEditingController _notesController = TextEditingController();
-  String _selectedCurrency = 'USD';
+  late String _selectedCurrency;
   final DateTime _issueDate = DateTime.now();
   DateTime _dueDate = DateTime.now().add(const Duration(days: 14));
 
@@ -763,6 +793,7 @@ class _CreateInvoiceDialogState extends State<_CreateInvoiceDialog> {
   void initState() {
     super.initState();
     _selectedClientId = widget.clients.first.id;
+    _selectedCurrency = supportedCurrencies.contains(widget.defaultCurrency) ? widget.defaultCurrency : 'USD';
     final randomSuffix = (100 + (DateTime.now().millisecondsSinceEpoch % 900)).toString();
     _invoiceNumberController = TextEditingController(text: 'INV-${DateTime.now().year}-$randomSuffix');
   }
@@ -862,6 +893,7 @@ class _CreateInvoiceDialogState extends State<_CreateInvoiceDialog> {
                 const SizedBox(height: 12),
                 if (clientProjects.isNotEmpty) ...[
                   DropdownButtonFormField<String?>(
+                    key: ValueKey(_selectedClientId),
                     initialValue: _selectedProjectId,
                     decoration: const InputDecoration(labelText: 'Associated Project (Optional)'),
                     items: [
@@ -891,8 +923,12 @@ class _CreateInvoiceDialogState extends State<_CreateInvoiceDialog> {
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) return 'Required';
-                          final d = double.tryParse(v.trim());
+                          final text = v.trim();
+                          final d = double.tryParse(text);
                           if (d == null || d <= 0) return 'Must be > 0';
+                          if (!RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(text)) {
+                            return 'Max 2 decimal places';
+                          }
                           return null;
                         },
                       ),
@@ -1009,9 +1045,23 @@ class _ReminderDraftModalState extends State<_ReminderDraftModal> {
   @override
   void dispose() {
     _timer?.cancel();
+    if (_isGenerating) {
+      widget.client.cancelActiveRequest();
+    }
     _notesController.dispose();
     _draftController.dispose();
     super.dispose();
+  }
+
+  void _cancelGeneration() {
+    widget.client.cancelActiveRequest();
+    _timer?.cancel();
+    if (mounted) {
+      setState(() {
+        _isGenerating = false;
+        _errorMessage = 'Generation cancelled by user.';
+      });
+    }
   }
 
   Future<void> _generateDraft() async {
@@ -1056,7 +1106,7 @@ class _ReminderDraftModalState extends State<_ReminderDraftModal> {
       if (mounted) {
         setState(() {
           _isGenerating = false;
-          _errorMessage = e.message;
+          _errorMessage = e.code == 'ABORTED' ? 'Generation cancelled by user.' : e.message;
         });
         _timer?.cancel();
       }
@@ -1246,9 +1296,21 @@ class _ReminderDraftModalState extends State<_ReminderDraftModal> {
                     child: CircularProgressIndicator(strokeWidth: 2.5, color: SoloDeskColors.primary),
                   ),
                   const SizedBox(width: 16),
-                  Text(
-                    'Drafting payment reminder with local model (${_elapsedSeconds}s)...',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: SoloDeskColors.primary),
+                  Expanded(
+                    child: Text(
+                      'Drafting payment reminder with local model (${_elapsedSeconds}s)...',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: SoloDeskColors.primary),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton(
+                    onPressed: _cancelGeneration,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: SoloDeskColors.red,
+                      side: const BorderSide(color: SoloDeskColors.redBorder),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    ),
+                    child: const Text('Cancel', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                   ),
                 ],
               ),
@@ -1340,7 +1402,7 @@ class _ReminderDraftModalState extends State<_ReminderDraftModal> {
   Widget _buildToneChip(ReminderTone tone) {
     final isSelected = _selectedTone == tone;
     return InkWell(
-      onTap: () => setState(() => _selectedTone = tone),
+      onTap: _isGenerating ? null : () => setState(() => _selectedTone = tone),
       borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

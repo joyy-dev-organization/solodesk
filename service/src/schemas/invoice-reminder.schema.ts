@@ -19,29 +19,75 @@ export function normalizeTone(input?: string): ReminderTone {
  */
 export const InvoiceReminderInputSchema = z.object({
   requestId: z.string().optional(),
-  invoiceId: z.string().min(1, 'invoiceId is required and cannot be empty'),
-  clientName: z.string().min(1, 'clientName is required and cannot be empty'),
-  invoiceNumber: z.string().min(1, 'invoiceNumber is required and cannot be empty'),
-  amountFormatted: z.string().min(1, 'amountFormatted is required (e.g. "$1,500.00" or "₦450,000.00")'),
+  invoiceId: z.string().min(1, 'invoiceId is required').max(128, 'invoiceId cannot exceed 128 chars'),
+  clientName: z.string().min(1, 'clientName is required').max(200, 'clientName cannot exceed 200 chars'),
+  invoiceNumber: z.string().min(1, 'invoiceNumber is required').max(100, 'invoiceNumber cannot exceed 100 chars'),
+  amountFormatted: z.string().min(1, 'amountFormatted is required (e.g. "$1,500.00" or "₦450,000.00")').max(50, 'amountFormatted cannot exceed 50 chars'),
   currency: z.string().length(3, 'currency must be a 3-letter ISO 4217 code').toUpperCase(),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be a calendar date in YYYY-MM-DD format'),
   daysOverdue: z.number().int().min(0, 'daysOverdue must be >= 0 (0 for due today or upcoming)'),
+  status: z.enum(['draft', 'unpaid', 'paid', 'cancelled']).optional(),
+  isPaid: z.boolean().optional(),
   tone: z.string().default('polite'),
   optionalNotes: z.string().max(8000, 'optionalNotes cannot exceed 8,000 characters').optional(),
-}).transform(data => ({
-  requestId: data.requestId,
-  invoiceId: data.invoiceId.trim(),
-  clientName: data.clientName.trim(),
-  invoiceNumber: data.invoiceNumber.trim(),
-  amountFormatted: data.amountFormatted.trim(),
-  currency: data.currency.trim().toUpperCase(),
-  dueDate: data.dueDate.trim(),
-  daysOverdue: data.daysOverdue,
-  tone: normalizeTone(data.tone),
-  optionalNotes: data.optionalNotes?.trim(),
-}));
+})
+  .refine(data => data.status !== 'paid' && data.isPaid !== true, {
+    message: 'Paid invoices cannot generate payment reminders.',
+    path: ['status'],
+  })
+  .transform(data => ({
+    requestId: data.requestId,
+    invoiceId: data.invoiceId.trim(),
+    clientName: data.clientName.trim(),
+    invoiceNumber: data.invoiceNumber.trim(),
+    amountFormatted: data.amountFormatted.trim(),
+    currency: data.currency.trim().toUpperCase(),
+    dueDate: data.dueDate.trim(),
+    daysOverdue: data.daysOverdue,
+    status: data.status,
+    isPaid: data.isPaid,
+    tone: normalizeTone(data.tone),
+    optionalNotes: data.optionalNotes?.trim(),
+  }));
 
 export type InvoiceReminderInput = z.infer<typeof InvoiceReminderInputSchema>;
+
+/**
+ * Step 1: Fact Validation & Context Enrichment Output Schema
+ */
+export const FactValidationOutputSchema = z.object({
+  invoiceId: z.string(),
+  clientName: z.string(),
+  invoiceNumber: z.string(),
+  amountFormatted: z.string(),
+  currency: z.string(),
+  dueDate: z.string(),
+  daysOverdue: z.number(),
+  tone: ReminderToneEnum,
+  statusContext: z.string(),
+  optionalNotes: z.string().optional(),
+});
+export type FactValidationOutput = z.infer<typeof FactValidationOutputSchema>;
+
+/**
+ * Step 2: Prompt Preparation Output Schema
+ */
+export const PreparedPromptOutputSchema = z.object({
+  facts: FactValidationOutputSchema,
+  systemInstructions: z.string(),
+  userPrompt: z.string(),
+});
+export type PreparedPromptOutput = z.infer<typeof PreparedPromptOutputSchema>;
+
+/**
+ * Step 3: Raw Agent Model Generation Output Schema
+ */
+export const AgentDraftOutputSchema = z.object({
+  facts: FactValidationOutputSchema,
+  rawModelText: z.string(),
+  parsedJson: z.record(z.string(), z.unknown()).optional(),
+});
+export type AgentDraftOutput = z.infer<typeof AgentDraftOutputSchema>;
 
 /**
  * Output schema returned by the Mastra InvoiceReminder workflow

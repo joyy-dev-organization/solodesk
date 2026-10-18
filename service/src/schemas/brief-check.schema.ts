@@ -43,6 +43,10 @@ export const BriefCheckOutputSchema = z.object({
   omissions: z.array(z.string()).default([]).describe('Important details missing from the brief like deadline or deliverables'),
   suggestedQuestions: z.array(z.string()).default([]).describe('Targeted clarification questions to ask the client'),
   starterScopeItems: z.array(StarterScopeItemSchema).default([]).describe('Draft scope deliverables grounded strictly in stated facts'),
+}).refine(data => {
+  return data.statedRequirements.length > 0 || data.omissions.length > 0 || data.starterScopeItems.length > 0;
+}, {
+  message: 'Model output is empty: must contain at least one stated requirement, omission, or starter scope item',
 });
 
 export type BriefCheckOutput = z.infer<typeof BriefCheckOutputSchema>;

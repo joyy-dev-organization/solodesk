@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:solodesk/db/client_repository.dart';
@@ -21,6 +22,14 @@ import '../helpers/fake_invoice_repository.dart';
 class FakeInvoiceReminderClient extends InvoiceReminderClient {
   InvoiceReminderResult? stubResult;
   Exception? errorToThrow;
+  bool cancelCalled = false;
+  Completer<InvoiceReminderResult>? delayedCompleter;
+
+  @override
+  void cancelActiveRequest() {
+    cancelCalled = true;
+    super.cancelActiveRequest();
+  }
 
   @override
   Future<InvoiceReminderResult> generateReminder({
@@ -34,6 +43,9 @@ class FakeInvoiceReminderClient extends InvoiceReminderClient {
     String tone = 'polite',
     String? optionalNotes,
   }) async {
+    if (delayedCompleter != null) {
+      return delayedCompleter!.future;
+    }
     if (errorToThrow != null) {
       throw errorToThrow!;
     }
@@ -407,6 +419,7 @@ void main() {
       );
       clientRepo.clients.add(client);
       invoiceRepo.clients['c-1'] = client;
+      prefRepo.pref = prefRepo.pref.copyWith(defaultCurrency: 'USD');
 
       await tester.pumpWidget(buildTestScreen());
       await tester.pumpAndSettle();
@@ -440,6 +453,185 @@ void main() {
       expect(invoiceRepo.invoices.length, 1);
       expect(invoiceRepo.invoices.first.amount.minorUnits, 75050);
       expect(invoiceRepo.invoices.first.amount.currency, 'USD');
+    });
+
+    testWidgets('rejects amounts with more than 2 decimal places', (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final client = Client(
+        id: 'c-1',
+        name: 'Precision Tech',
+        initials: 'PT',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      clientRepo.clients.add(client);
+      invoiceRepo.clients['c-1'] = client;
+
+      await tester.pumpWidget(buildTestScreen());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Create Invoice'));
+      await tester.pumpAndSettle();
+
+      final amountField = find.widgetWithText(TextFormField, '1500.00');
+      await tester.enterText(amountField, '120.456');
+      await tester.pumpAndSettle();
+
+      final dialogCreateBtn = find.descendant(of: find.byType(AlertDialog), matching: find.text('Create Invoice'));
+      await tester.tap(dialogCreateBtn);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Max 2 decimal places'), findsOneWidget);
+      expect(invoiceRepo.invoices, isEmpty);
+    });
+
+    testWidgets('switching clients in create invoice dialog updates associated projects without assertion crash', (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final clientA = Client(
+        id: 'c-a',
+        name: 'Client Alpha',
+        initials: 'CA',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      final clientB = Client(
+        id: 'c-b',
+        name: 'Client Beta',
+        initials: 'CB',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      clientRepo.clients.addAll([clientA, clientB]);
+      invoiceRepo.clients['c-a'] = clientA;
+      invoiceRepo.clients['c-b'] = clientB;
+
+      final projectA = Project(
+        id: 'p-a',
+        clientId: 'c-a',
+        name: 'Alpha Redesign',
+        niche: 'Web Design',
+        budget: const Money(minorUnits: 500000, currency: 'USD'),
+        status: 'active',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      final projectB = Project(
+        id: 'p-b',
+        clientId: 'c-b',
+        name: 'Beta Mobile App',
+        niche: 'Mobile Development',
+        budget: const Money(minorUnits: 800000, currency: 'USD'),
+        status: 'active',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      projectRepo.projects.addAll([projectA, projectB]);
+
+      await tester.pumpWidget(buildTestScreen());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Create Invoice'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Create New Invoice'), findsOneWidget);
+      // Project dropdown defaults to None / General
+      final projectDropdown = find.widgetWithText(DropdownButtonFormField<String?>, 'None / General');
+      expect(projectDropdown, findsOneWidget);
+
+      // Open project dropdown and select Alpha Redesign
+      await tester.tap(projectDropdown);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Alpha Redesign'), findsOneWidget);
+      await tester.tap(find.text('Alpha Redesign').last);
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(DropdownButtonFormField<String?>, 'Alpha Redesign'), findsOneWidget);
+
+      // Open Client dropdown and select Client Beta
+      final clientDropdown = find.widgetWithText(DropdownButtonFormField<String>, 'Client Alpha');
+      await tester.tap(clientDropdown);
+      await tester.pumpAndSettle();
+
+      final betaOption = find.widgetWithText(DropdownMenuItem<String>, 'Client Beta').last;
+      await tester.tap(betaOption, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      // With ValueKey(_selectedClientId), changing client resets _selectedProjectId to null
+      // and rebuilds the dropdown for Client Beta without the Flutter 'items.where(...).length == 1' crash!
+      expect(find.widgetWithText(DropdownButtonFormField<String?>, 'None / General'), findsOneWidget);
+
+      // Open project dropdown again to verify Beta Mobile App is available
+      await tester.tap(find.widgetWithText(DropdownButtonFormField<String?>, 'None / General'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Beta Mobile App'), findsOneWidget);
+      expect(find.text('Alpha Redesign'), findsNothing);
+    });
+
+    testWidgets('cancel button in draft modal aborts active generation and displays cancelled message', (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final client = Client(
+        id: 'c-1',
+        name: 'Slow AI Client',
+        initials: 'SC',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      clientRepo.clients.add(client);
+      invoiceRepo.clients['c-1'] = client;
+
+      final now = DateTime.now();
+      final inv = Invoice(
+        id: 'inv-slow',
+        clientId: 'c-1',
+        invoiceNumber: 'INV-2026-SLOW',
+        amount: const Money(minorUnits: 100000, currency: 'USD'),
+        issueDate: DateTime(now.year, now.month, now.day - 7),
+        dueDate: DateTime(now.year, now.month, now.day - 2),
+        status: InvoiceStatus.unpaid,
+        createdAt: now,
+        updatedAt: now,
+      );
+      invoiceRepo.invoices.add(inv);
+
+      await tester.pumpWidget(buildTestScreen());
+      await tester.pumpAndSettle();
+
+      // Open modal
+      await tester.tap(find.text('Draft Reminder'));
+      await tester.pumpAndSettle();
+
+      // Configure fake to simulate long in-flight request
+      final completer = Completer<InvoiceReminderResult>();
+      fakeReminderClient.delayedCompleter = completer;
+
+      // Tap generate
+      await tester.tap(find.text('Generate Polite Reminder'));
+      await tester.pump(); // Start async work without settling
+
+      // Loading container and Cancel button are visible
+      expect(find.textContaining('Drafting payment reminder with local model'), findsOneWidget);
+      final cancelBtn = find.text('Cancel');
+      expect(cancelBtn, findsOneWidget);
+
+      // Tap Cancel
+      await tester.tap(cancelBtn);
+      await tester.pumpAndSettle();
+
+      // Verify cancellation occurred
+      expect(fakeReminderClient.cancelCalled, isTrue);
+      expect(find.text('Generation cancelled by user.'), findsOneWidget);
+      expect(find.text('Generate Polite Reminder'), findsOneWidget);
     });
   });
 }

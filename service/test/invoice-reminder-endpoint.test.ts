@@ -3,6 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { AddressInfo } from 'node:net';
 import {
   createServer,
   HOST,
@@ -37,16 +38,23 @@ const fixtures = JSON.parse(fs.readFileSync(FIXTURES_PATH, 'utf8')) as {
 
 describe('Milestone M5: POST /api/invoice-reminder Endpoint Suite', () => {
   let server: http.Server;
-  const testPort = 3148; // dedicated test port
+  let testPort: number;
+  let endpointUrl: string;
+  let legacyEndpointUrl: string;
+  let aliasEndpointUrl: string;
   const token = getOrCreateRuntimeToken();
-  const endpointUrl = `http://${HOST}:${testPort}/api/invoice-reminder`;
-  const legacyEndpointUrl = `http://${HOST}:${testPort}/v1/invoice-reminder`;
-  const aliasEndpointUrl = `http://${HOST}:${testPort}/v1/reminder-draft`;
 
   beforeAll(async () => {
     server = createServer();
     await new Promise<void>((resolve, reject) => {
-      server.listen(testPort, HOST, () => resolve());
+      // Use ephemeral port 0 to prevent EADDRINUSE collisions
+      server.listen(0, HOST, () => {
+        testPort = (server.address() as AddressInfo).port;
+        endpointUrl = `http://${HOST}:${testPort}/api/invoice-reminder`;
+        legacyEndpointUrl = `http://${HOST}:${testPort}/v1/invoice-reminder`;
+        aliasEndpointUrl = `http://${HOST}:${testPort}/v1/reminder-draft`;
+        resolve();
+      });
       server.on('error', reject);
     });
   });
@@ -81,6 +89,22 @@ describe('Milestone M5: POST /api/invoice-reminder Endpoint Suite', () => {
       expect(res.status).toBe(401);
       const json = await res.json() as { error: { code: string } };
       expect(json.error.code).toBe(ErrorCode.UNAUTHORIZED);
+    });
+
+    it('returns 403 UNAUTHORIZED when browser Origin header is supplied (CSRF protection)', async () => {
+      const res = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'Origin': 'http://evil-website.com',
+        },
+        body: JSON.stringify({ invoiceId: 'inv-1' }),
+      });
+      expect(res.status).toBe(403);
+      const json = await res.json() as { error: { code: string; message: string } };
+      expect(json.error.code).toBe(ErrorCode.UNAUTHORIZED);
+      expect(json.error.message).toContain('Browser origins are strictly prohibited');
     });
 
     it('authenticates successfully across all route aliases', async () => {
@@ -131,6 +155,52 @@ describe('Milestone M5: POST /api/invoice-reminder Endpoint Suite', () => {
       expect(json.error.message).toContain('invoiceId');
     });
 
+    it('returns 400 INVALID_INPUT when invoice is marked as paid (Handbook line 515)', async () => {
+      // Test status: 'paid'
+      const res1 = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          invoiceId: 'inv-paid',
+          clientName: 'Acme',
+          invoiceNumber: 'INV-1',
+          amountFormatted: '$100.00',
+          currency: 'USD',
+          dueDate: '2026-10-17',
+          daysOverdue: 0,
+          status: 'paid',
+        }),
+      });
+      expect(res1.status).toBe(400);
+      const json1 = await res1.json() as { error: { message: string } };
+      expect(json1.error.message).toContain('Paid invoices cannot generate payment reminders');
+
+      // Test isPaid: true
+      const res2 = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          invoiceId: 'inv-paid-2',
+          clientName: 'Acme',
+          invoiceNumber: 'INV-2',
+          amountFormatted: '$100.00',
+          currency: 'USD',
+          dueDate: '2026-10-17',
+          daysOverdue: 0,
+          isPaid: true,
+        }),
+      });
+      expect(res2.status).toBe(400);
+      const json2 = await res2.json() as { error: { message: string } };
+      expect(json2.error.message).toContain('Paid invoices cannot generate payment reminders');
+    });
+
     it('returns 400 INVALID_INPUT on invalid date format or negative daysOverdue', async () => {
       const res = await fetch(endpointUrl, {
         method: 'POST',
@@ -175,6 +245,31 @@ describe('Milestone M5: POST /api/invoice-reminder Endpoint Suite', () => {
       const json = await res.json() as { error: { code: string; message: string } };
       expect(json.error.code).toBe(ErrorCode.INVALID_INPUT);
     });
+
+    it('returns 400 INVALID_INPUT when total raw body exceeds MAX_INPUT_CHARS (8,000)', async () => {
+      const hugePadding = ' '.repeat(8100);
+      const res = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          invoiceId: 'inv-huge',
+          clientName: 'Acme',
+          invoiceNumber: 'INV-1',
+          amountFormatted: '$100.00',
+          currency: 'USD',
+          dueDate: '2026-10-17',
+          daysOverdue: 0,
+          padding: hugePadding,
+        }),
+      });
+      expect(res.status).toBe(400);
+      const json = await res.json() as { error: { code: string; message: string } };
+      expect(json.error.code).toBe(ErrorCode.INVALID_INPUT);
+      expect(json.error.message).toContain('exceeds maximum size of 8000 characters');
+    });
   });
 
   // --- UNIT TESTS: CONCURRENCY MUTEX & DEFENSIVE NORMALIZER ---
@@ -207,7 +302,7 @@ describe('Milestone M5: POST /api/invoice-reminder Endpoint Suite', () => {
       }
     });
 
-    it('defensive normalizer guarantees amountFormatted inclusion and fallback template', () => {
+    it('defensive normalizer guarantees amountFormatted, clientName, and invoiceNumber inclusion', () => {
       const input = {
         invoiceId: 'inv-test',
         clientName: 'Apex Studio',
@@ -217,22 +312,54 @@ describe('Milestone M5: POST /api/invoice-reminder Endpoint Suite', () => {
         dueDate: '2026-10-17',
         daysOverdue: 0,
         tone: 'gentle' as const,
+        statusContext: 'Due today or upcoming',
       };
 
-      // Scenario 1: Model omitted the amount
-      const rawWithoutAmount = {
-        reminderDraft: 'Hi Apex Studio, please remember to pay your invoice.',
+      // Scenario 1: Model omitted the amount and invoice number
+      const rawWithoutInvariants = {
+        reminderDraft: 'Hi, please remember to pay your invoice.',
         summary: 'Gentle reminder',
       };
-      const normalized = normalizeInvoiceReminderOutput(rawWithoutAmount, input);
+      const normalized = normalizeInvoiceReminderOutput(rawWithoutInvariants, input);
       expect(normalized.reminderDraft).toContain('$2,500.00');
+      expect(normalized.reminderDraft).toContain('INV-007');
+      expect(normalized.reminderDraft).toContain('Apex Studio');
 
-      // Scenario 2: Model emitted empty draft
+      // Scenario 2: Model emitted empty draft - fallback template used
       const rawEmpty = {};
       const fallback = normalizeInvoiceReminderOutput(rawEmpty, input);
       expect(fallback.reminderDraft).toContain('$2,500.00');
       expect(fallback.reminderDraft).toContain('INV-007');
       expect(fallback.reminderDraft).toContain('Apex Studio');
+    });
+
+    it('defensive normalizer strips injected penalties and foreign currencies', () => {
+      const input = {
+        invoiceId: 'inv-sec',
+        clientName: 'Northstar Inc',
+        invoiceNumber: 'INV-101',
+        amountFormatted: '$1,500.00',
+        currency: 'USD',
+        dueDate: '2026-10-10',
+        daysOverdue: 7,
+        tone: 'polite' as const,
+        statusContext: '7 days overdue',
+      };
+
+      const rawWithInjection = {
+        reminderDraft: 'Dear Northstar Inc,\n\nThis is a reminder regarding invoice INV-101 for $1,500.00.\n\nA late payment penalty fee of $150.00 has been added.\n\nWe will commence immediate litigation if not paid.\n\nAlso you owe CAD 300 for extra consulting.\n\nThank you for your prompt payment.',
+      };
+
+      const cleaned = normalizeInvoiceReminderOutput(rawWithInjection, input);
+
+      expect(cleaned.reminderDraft).toContain('$1,500.00');
+      expect(cleaned.reminderDraft).toContain('INV-101');
+      expect(cleaned.reminderDraft).toContain('Northstar Inc');
+
+      // Must NOT contain injected penalties or unauthorized foreign currencies
+      expect(cleaned.reminderDraft).not.toContain('late payment penalty');
+      expect(cleaned.reminderDraft).not.toContain('litigation');
+      expect(cleaned.reminderDraft).not.toContain('CAD 300');
     });
   });
 

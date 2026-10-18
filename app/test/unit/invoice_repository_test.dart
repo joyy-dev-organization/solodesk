@@ -2,9 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:solodesk/db/database_service.dart';
 import 'package:solodesk/db/client_repository.dart';
+import 'package:solodesk/db/project_repository.dart';
 import 'package:solodesk/db/invoice_repository.dart';
 import 'package:solodesk/db/demo_data_repository.dart';
 import 'package:solodesk/models/client.dart';
+import 'package:solodesk/models/project.dart';
 import 'package:solodesk/models/invoice.dart';
 import 'package:solodesk/models/money.dart';
 
@@ -17,12 +19,14 @@ void main() {
   group('Milestone M5: InvoiceRepository & SQLite Schema V2 Tests', () {
     late DatabaseService dbService;
     late ClientRepository clientRepo;
+    late ProjectRepository projectRepo;
     late InvoiceRepository invoiceRepo;
     late DemoDataRepository demoDataRepo;
 
     setUp(() async {
       dbService = await DatabaseService.inMemory();
       clientRepo = ClientRepository(dbService.db);
+      projectRepo = ProjectRepository(dbService.db);
       invoiceRepo = InvoiceRepository(dbService.db);
       demoDataRepo = DemoDataRepository(dbService.db);
     });
@@ -191,11 +195,79 @@ void main() {
     test('Synthetic Invoices Seeding and Purge', () async {
       await demoDataRepo.seedSyntheticData();
       final syntheticInvoices = await invoiceRepo.getInvoices(includeSynthetic: true);
-      expect(syntheticInvoices.length, 3);
+      expect(syntheticInvoices.length, 4); // 4 seeded synthetic invoices (including due today)
 
       await demoDataRepo.purgeSyntheticData();
       final remaining = await invoiceRepo.getInvoices(includeSynthetic: true);
       expect(remaining, isEmpty);
+    });
+
+    test('Project Deletion: ON DELETE SET NULL retains invoice with null projectId', () async {
+      final now = DateTime.now().toUtc();
+      final client = Client(
+        id: 'client-proj-del',
+        name: 'Project Client',
+        initials: 'PC',
+        createdAt: now,
+        updatedAt: now,
+      );
+      await clientRepo.createClient(client);
+
+      final project = Project(
+        id: 'proj-del-1',
+        clientId: client.id,
+        name: 'Website Redesign',
+        niche: 'Design & branding',
+        budget: const Money(minorUnits: 100000, currency: 'USD'),
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      );
+      await projectRepo.createProject(project);
+
+      final inv = Invoice(
+        id: 'inv-proj-del',
+        clientId: client.id,
+        projectId: project.id,
+        invoiceNumber: 'INV-PROJ-DEL',
+        amount: const Money(minorUnits: 50000, currency: 'USD'),
+        issueDate: DateTime(2026, 10, 1),
+        dueDate: DateTime(2026, 10, 15),
+        status: InvoiceStatus.unpaid,
+        createdAt: now,
+        updatedAt: now,
+      );
+      await invoiceRepo.createInvoice(inv);
+
+      final before = await invoiceRepo.getInvoiceById('inv-proj-del');
+      expect(before?.projectId, 'proj-del-1');
+
+      // Delete project
+      await projectRepo.deleteProject('proj-del-1');
+
+      // Invoice survives, with projectId set to null
+      final after = await invoiceRepo.getInvoiceById('inv-proj-del');
+      expect(after, isNotNull);
+      expect(after?.projectId, isNull);
+    });
+
+    test('Database schema CHECK constraint rejects negative amount_minor_units', () async {
+      final now = DateTime.now().toUtc();
+      final client = Client(
+        id: 'client-neg-check',
+        name: 'Negative Check Client',
+        initials: 'NC',
+        createdAt: now,
+        updatedAt: now,
+      );
+      await clientRepo.createClient(client);
+
+      expect(() async {
+        await dbService.db.rawInsert('''
+          INSERT INTO invoices (id, client_id, invoice_number, amount_minor_units, currency, issue_date, due_date, status, created_at, updated_at)
+          VALUES ('inv-neg', 'client-neg-check', 'INV-NEG', -500, 'USD', '2026-10-01', '2026-10-15', 'unpaid', ?, ?)
+        ''', [now.toIso8601String(), now.toIso8601String()]);
+      }, throwsA(anything));
     });
   });
 }

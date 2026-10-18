@@ -620,6 +620,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                   icon: Icons.attach_money_outlined,
                   iconColor: SoloDeskColors.amber,
                   iconBgColor: SoloDeskColors.amberBg,
+                  onTap: () => widget.onNavigate(4),
                 ),
               ),
             ],

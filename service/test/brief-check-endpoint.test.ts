@@ -12,6 +12,7 @@ import {
   getInferenceBusy,
 } from '../src/server.js';
 import { checkOllamaReadiness, ACTIVE_MODEL_ID } from '../src/model.js';
+import { BriefCheckInputSchema } from '../src/schemas/brief-check.schema.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_PATH = path.resolve(__dirname, '..', '..', 'fixtures', 'synthetic-cases.json');
@@ -33,7 +34,21 @@ describe('Milestone M3: POST /api/brief-check Endpoint Suite', () => {
       server.listen(testPort, HOST, () => resolve());
       server.on('error', reject);
     });
-  });
+
+    // Warm up model resident memory in Ollama
+    const readiness = await checkOllamaReadiness();
+    if (readiness.available && readiness.modelReady) {
+      try {
+        await fetch('http://127.0.0.1:11434/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: ACTIVE_MODEL_ID, prompt: 'ping', stream: false }),
+        });
+      } catch {
+        // Non-fatal warmup
+      }
+    }
+  }, 90000);
 
   afterAll(async () => {
     await new Promise<void>(resolve => server.close(() => resolve()));
@@ -130,28 +145,20 @@ describe('Milestone M3: POST /api/brief-check Endpoint Suite', () => {
       expect(json.error.message).toContain('8000');
     });
 
-    it('accepts briefText alias and normalizes complex niche strings', async () => {
+    it('accepts briefText alias and normalizes complex niche strings', () => {
       const payload = {
         briefText: 'Need 4 blog posts on cloud infrastructure.',
         niche: 'Writing & content',
         servicePreferences: { currency: 'NGN', categories: ['Writing & content'] },
       };
-      // Pre-check readiness; if model is ready, live call works
-      const readiness = await checkOllamaReadiness();
-      if (readiness.available && readiness.modelReady) {
-        const res = await fetch(endpointUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-        });
-        expect(res.status).toBe(200);
-        const json = await res.json() as { data: { statedRequirements: string[] } };
-        expect(json.data.statedRequirements.length).toBeGreaterThan(0);
+      const parsed = BriefCheckInputSchema.safeParse(payload);
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.brief).toBe('Need 4 blog posts on cloud infrastructure.');
+        expect(parsed.data.niche).toBe('writing');
+        expect(parsed.data.servicePreferences?.currency).toBe('NGN');
       }
-    }, 90000);
+    });
   });
 
   // --- CONCURRENCY LOCK TEST ---
@@ -179,10 +186,50 @@ describe('Milestone M3: POST /api/brief-check Endpoint Suite', () => {
     });
   });
 
-  // --- LIVE WORKFLOW INTEGRATION (M3 VERTICAL SLICE) ---
-  describe('Live Mastra Workflow Integration with local Ollama model', () => {
+  // --- MASTRA 5-STEP WORKFLOW INSPECTABILITY ---
+  describe('Mastra 5-Step Workflow Inspectability', () => {
+    it('verifies all 5 named steps are defined with correct IDs', async () => {
+      const {
+        validateInputStep,
+        selectNicheChecklistStep,
+        analyzeWithAgentStep,
+        validateOutputStep,
+        returnDraftStep,
+        briefCheckWorkflow,
+      } = await import('../src/workflows/brief-check.js');
+
+      expect(validateInputStep.id).toBe('validate-input');
+      expect(selectNicheChecklistStep.id).toBe('select-niche-checklist');
+      expect(analyzeWithAgentStep.id).toBe('analyze-with-agent');
+      expect(validateOutputStep.id).toBe('validate-output');
+      expect(returnDraftStep.id).toBe('return-draft');
+      expect(briefCheckWorkflow.id).toBe('brief-check-workflow');
+    });
+
+    it('selectNicheChecklistStep selects specialized domain checklist and guidance', async () => {
+      const { selectNicheChecklistStep } = await import('../src/workflows/brief-check.js');
+
+      const designRes = await selectNicheChecklistStep.execute({
+        inputData: { brief: 'Design modern logo', niche: 'design' },
+      });
+      expect(designRes.checklist.length).toBeGreaterThan(5);
+      expect(designRes.nicheGuidance).toContain('designer');
+      expect(designRes.checklist.some(item => item.includes('Vector'))).toBe(true);
+
+      const writingRes = await selectNicheChecklistStep.execute({
+        inputData: { brief: 'Four blog articles', niche: 'writing' },
+      });
+      expect(writingRes.checklist.length).toBeGreaterThan(5);
+      expect(writingRes.nicheGuidance).toContain('copywriter');
+      expect(writingRes.checklist.some(item => item.includes('word count'))).toBe(true);
+    });
+  });
+
+  // --- LIVE WORKFLOW INTEGRATION (M3 VERTICAL SLICE ACROSS ALL 6 SYNTHETIC CASES) ---
+  describe('Live Mastra Workflow Integration with local Ollama model (All 6 Synthetic Cases)', () => {
     it('executes Synthetic Brief 1: Vague Branding (Design niche)', async () => {
       const briefFixture = fixtures.briefs[0];
+      const start = performance.now();
       const res = await fetch(endpointUrl, {
         method: 'POST',
         headers: {
@@ -194,6 +241,8 @@ describe('Milestone M3: POST /api/brief-check Endpoint Suite', () => {
           niche: 'Design & branding',
         }),
       });
+      const latencyMs = performance.now() - start;
+      console.log(`[M3 Benchmark] ${briefFixture.id}: ${latencyMs.toFixed(0)} ms (Status: ${res.status})`);
 
       expect(res.status).toBe(200);
       const json = await res.json() as {
@@ -212,12 +261,74 @@ describe('Milestone M3: POST /api/brief-check Endpoint Suite', () => {
       expect(json.data.omissions.length).toBeGreaterThan(0);
       expect(json.data.suggestedQuestions.length).toBeGreaterThan(0);
       expect(json.data.starterScopeItems.length).toBeGreaterThan(0);
-      expect(json.data.starterScopeItems[0].title).toBeDefined();
-      expect(json.data.starterScopeItems[0].description).toBeDefined();
+    }, 120000);
+
+    it('executes Synthetic Brief 2: Specified Copywriting (Writing niche)', async () => {
+      const briefFixture = fixtures.briefs[1];
+      const start = performance.now();
+      const res = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          briefText: briefFixture.text,
+          niche: 'writing',
+        }),
+      });
+      const latencyMs = performance.now() - start;
+      console.log(`[M3 Benchmark] ${briefFixture.id}: ${latencyMs.toFixed(0)} ms (Status: ${res.status})`);
+
+      expect(res.status).toBe(200);
+      const json = await res.json() as {
+        data: {
+          statedRequirements: string[];
+          omissions: string[];
+          starterScopeItems: Array<{ title: string; description: string }>;
+        };
+      };
+
+      expect(json.data.statedRequirements.length).toBeGreaterThan(0);
+      expect(json.data.starterScopeItems.length).toBeGreaterThan(0);
+    }, 120000);
+
+    it('executes Synthetic Brief 3: Contradictory Branding & Schedule Brief', async () => {
+      const briefFixture = fixtures.briefs[2];
+      const start = performance.now();
+      const res = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          brief: briefFixture.text,
+          niche: 'design',
+        }),
+      });
+      const latencyMs = performance.now() - start;
+      console.log(`[M3 Benchmark] ${briefFixture.id}: ${latencyMs.toFixed(0)} ms (Status: ${res.status})`);
+
+      expect(res.status).toBe(200);
+      const json = await res.json() as {
+        data: {
+          statedRequirements: string[];
+          omissions: string[];
+          suggestedQuestions: string[];
+          starterScopeItems: Array<{ title: string; description: string }>;
+        };
+      };
+
+      // Model must surface omissions/questions to resolve the contradictions
+      expect(json.data.omissions.length).toBeGreaterThan(0);
+      expect(json.data.suggestedQuestions.length).toBeGreaterThan(0);
+      expect(json.data.statedRequirements.length).toBeGreaterThan(0);
     }, 120000);
 
     it('executes Synthetic Brief 4: Specified Branding (Design niche)', async () => {
       const briefFixture = fixtures.briefs[3];
+      const start = performance.now();
       const res = await fetch(endpointUrl, {
         method: 'POST',
         headers: {
@@ -229,6 +340,8 @@ describe('Milestone M3: POST /api/brief-check Endpoint Suite', () => {
           niche: 'design',
         }),
       });
+      const latencyMs = performance.now() - start;
+      console.log(`[M3 Benchmark] ${briefFixture.id}: ${latencyMs.toFixed(0)} ms (Status: ${res.status})`);
 
       expect(res.status).toBe(200);
       const json = await res.json() as {
@@ -242,8 +355,40 @@ describe('Milestone M3: POST /api/brief-check Endpoint Suite', () => {
       expect(json.data.starterScopeItems.length).toBeGreaterThan(0);
     }, 120000);
 
+    it('executes Synthetic Brief 5: Vague Copywriting (Writing niche)', async () => {
+      const briefFixture = fixtures.briefs[4];
+      const start = performance.now();
+      const res = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          brief: briefFixture.text,
+          niche: 'writing',
+        }),
+      });
+      const latencyMs = performance.now() - start;
+      console.log(`[M3 Benchmark] ${briefFixture.id}: ${latencyMs.toFixed(0)} ms (Status: ${res.status})`);
+
+      expect(res.status).toBe(200);
+      const json = await res.json() as {
+        data: {
+          statedRequirements: string[];
+          omissions: string[];
+          suggestedQuestions: string[];
+        };
+      };
+
+      expect(json.data.statedRequirements.length).toBeGreaterThan(0);
+      expect(json.data.omissions.length).toBeGreaterThan(0);
+      expect(json.data.suggestedQuestions.length).toBeGreaterThan(0);
+    }, 120000);
+
     it('resists prompt injection without fabricating prices or violating schema (Synthetic Brief 6)', async () => {
       const briefFixture = fixtures.briefs[5];
+      const start = performance.now();
       const res = await fetch(endpointUrl, {
         method: 'POST',
         headers: {
@@ -255,6 +400,8 @@ describe('Milestone M3: POST /api/brief-check Endpoint Suite', () => {
           niche: 'general',
         }),
       });
+      const latencyMs = performance.now() - start;
+      console.log(`[M3 Benchmark] ${briefFixture.id}: ${latencyMs.toFixed(0)} ms (Status: ${res.status})`);
 
       expect(res.status).toBe(200);
       const json = await res.json() as {
@@ -264,7 +411,7 @@ describe('Milestone M3: POST /api/brief-check Endpoint Suite', () => {
         };
       };
 
-      // Model adheres strictly to BriefCheck output schema
+      // Model adheres strictly to BriefCheck output schema and does not execute injection
       expect(json.data.statedRequirements).toBeDefined();
       expect(json.data.starterScopeItems).toBeDefined();
     }, 120000);

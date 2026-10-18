@@ -56,7 +56,10 @@ class Invoice {
     required this.updatedAt,
   });
 
-  static DateTime toCalendarDate(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
+  static DateTime toCalendarDate(DateTime dt) {
+    final local = dt.toLocal();
+    return DateTime(local.year, local.month, local.day);
+  }
 
   bool isOverdueAt(DateTime referenceDate) {
     if (status == InvoiceStatus.paid || status == InvoiceStatus.cancelled) return false;

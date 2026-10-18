@@ -20,11 +20,13 @@ enum ScopeShieldUiState {
 class ScopeShieldScreen extends StatefulWidget {
   final bool isSyntheticDemoActive;
   final ScopeCheckClient? client;
+  final void Function(int index)? onNavigate;
 
   const ScopeShieldScreen({
     super.key,
     required this.isSyntheticDemoActive,
     this.client,
+    this.onNavigate,
   });
 
   @override
@@ -53,6 +55,7 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
   Timer? _elapsedTimer;
   int _elapsedSeconds = 0;
   int? _lastInferenceDurationMs;
+  int _analysisRequestId = 0;
 
   @override
   void initState() {
@@ -117,7 +120,7 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
         _projects = validProjects;
         _selectedProject = firstValidProject;
         _projectApprovedScopes = firstScopes;
-        _currentScope = firstScopes.isNotEmpty ? firstScopes.last : null;
+        _currentScope = firstScopes.isNotEmpty ? firstScopes.first : null;
         _isLoadingProjects = false;
       });
     }
@@ -136,7 +139,7 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
     if (mounted) {
       setState(() {
         _projectApprovedScopes = fullScopes;
-        _currentScope = fullScopes.isNotEmpty ? fullScopes.last : null;
+        _currentScope = fullScopes.isNotEmpty ? fullScopes.first : null;
       });
     }
   }
@@ -161,6 +164,8 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
     if (requestText.isEmpty || requestText.length > 8000) return;
     if (_currentScope == null || _currentScope!.items.isEmpty) return;
 
+    final currentRequestId = ++_analysisRequestId;
+
     setState(() {
       _uiState = ScopeShieldUiState.loading;
       _errorMessage = null;
@@ -181,7 +186,7 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
       stopwatch.stop();
       _stopTimer();
 
-      if (!mounted) return;
+      if (currentRequestId != _analysisRequestId || !mounted) return;
 
       setState(() {
         _analysisResult = result;
@@ -190,18 +195,25 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
         _uiState = ScopeShieldUiState.success;
       });
     } on ScopeCheckValidationException catch (e) {
+      if (currentRequestId != _analysisRequestId || !mounted) return;
       _handleError('Validation Error', e.message, e.code);
     } on ScopeCheckConcurrencyException catch (e) {
+      if (currentRequestId != _analysisRequestId || !mounted) return;
       _handleError('Local Model Busy', e.message, e.code);
     } on ScopeCheckModelOfflineException catch (e) {
+      if (currentRequestId != _analysisRequestId || !mounted) return;
       _handleError('Local Ollama Offline', e.message, e.code);
     } on ScopeCheckTimeoutException catch (e) {
+      if (currentRequestId != _analysisRequestId || !mounted) return;
       _handleError('Inference Timed Out', e.message, e.code);
     } on ScopeCheckAuthException catch (e) {
+      if (currentRequestId != _analysisRequestId || !mounted) return;
       _handleError('Service Authentication Error', e.message, e.code);
     } on ScopeCheckNetworkException catch (e) {
+      if (currentRequestId != _analysisRequestId || !mounted) return;
       _handleError('Service Unreachable', e.message, e.code);
     } catch (e) {
+      if (currentRequestId != _analysisRequestId || !mounted) return;
       _handleError('Comparison Error', e.toString(), 'UNKNOWN');
     }
   }
@@ -217,6 +229,7 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
   }
 
   void _cancelAnalysis() {
+    _analysisRequestId++;
     _stopTimer();
     setState(() {
       _uiState = ScopeShieldUiState.idle;
@@ -734,12 +747,24 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
                 ),
               ),
               const SizedBox(width: 16),
-              if (_currentScope != null && _currentScope!.version.isApproved)
-                OutlinedButton.icon(
-                  onPressed: _branchNewRevision,
-                  icon: const Icon(Icons.fork_right_outlined, size: 16),
-                  label: const Text('Branch New Revision'),
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: loadProjects,
+                    icon: const Icon(Icons.refresh, size: 20),
+                    tooltip: 'Refresh Scopes',
+                  ),
+                  if (_currentScope != null && _currentScope!.version.isApproved) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _branchNewRevision,
+                      icon: const Icon(Icons.fork_right_outlined, size: 16),
+                      label: const Text('Branch New Revision'),
+                    ),
+                  ],
+                ],
+              ),
             ],
           ),
 
@@ -773,7 +798,7 @@ class _ScopeShieldScreenState extends State<ScopeShieldScreen> {
                       children: [
                         OutlinedButton(
                           onPressed: () {
-                            DefaultTabController.of(context).animateTo(2);
+                            widget.onNavigate?.call(2);
                           },
                           child: const Text('Go to BriefCheck'),
                         ),

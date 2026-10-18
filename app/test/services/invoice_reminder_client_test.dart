@@ -264,5 +264,37 @@ void main() {
         throwsA(isA<InvoiceReminderNetworkException>()),
       );
     });
+
+    test('cancelActiveRequest aborts in-flight HTTP request and throws ABORTED exception', () async {
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final port = server!.port;
+
+      server!.listen((HttpRequest request) async {
+        await Future.delayed(const Duration(seconds: 5));
+        request.response.statusCode = HttpStatus.ok;
+        request.response.write('{}');
+        await request.response.close();
+      });
+
+      final client = InvoiceReminderClient(port: port);
+
+      final future = client.generateReminder(
+        invoiceId: 'inv-1',
+        clientName: 'Acme',
+        invoiceNumber: 'INV-1',
+        amountFormatted: '\$100.00',
+        currency: 'USD',
+        dueDate: '2026-10-15',
+        daysOverdue: 0,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 50));
+      client.cancelActiveRequest();
+
+      await expectLater(
+        future,
+        throwsA(isA<InvoiceReminderException>().having((e) => e.code, 'code', 'ABORTED')),
+      );
+    });
   });
 }

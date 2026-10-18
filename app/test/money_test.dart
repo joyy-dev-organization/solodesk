@@ -41,5 +41,18 @@ void main() {
       // Subtracting larger from smaller throws
       expect(() => b - a, throwsA(isA<ArgumentError>()));
     });
+
+    test('rejects negative major units in fromMajorUnits', () {
+      expect(() => Money.fromMajorUnits(-50.0, 'USD'), throwsA(isA<ArgumentError>()));
+    });
+
+    test('rejects negative minorUnits in constructor assertion', () {
+      expect(() => Money(minorUnits: -100, currency: 'USD'), throwsA(isA<AssertionError>()));
+    });
+
+    test('rejects currency codes not exactly 3 characters', () {
+      expect(() => Money(minorUnits: 100, currency: 'US'), throwsA(isA<AssertionError>()));
+      expect(() => Money(minorUnits: 100, currency: 'USDD'), throwsA(isA<AssertionError>()));
+    });
   });
 }

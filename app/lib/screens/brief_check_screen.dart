@@ -9,6 +9,7 @@ import '../models/client.dart';
 import '../models/project.dart';
 import '../models/money.dart';
 import '../models/scope_item.dart';
+import '../models/scope_version.dart';
 import '../services/brief_check_client.dart';
 import '../services/brief_check_exceptions.dart';
 import '../theme/colors.dart';
@@ -70,6 +71,7 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
   Timer? _elapsedTimer;
   int _elapsedSeconds = 0;
   int? _lastInferenceDurationMs;
+  int _analysisRequestId = 0;
 
   // Editable deliverables
   final List<EditableDeliverableItem> _deliverables = [];
@@ -138,6 +140,8 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
     final briefText = _briefController.text.trim();
     if (briefText.isEmpty || briefText.length > 8000) return;
 
+    final currentId = ++_analysisRequestId;
+
     setState(() {
       _uiState = BriefCheckUiState.loading;
       _errorMessage = null;
@@ -162,7 +166,7 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
       stopwatch.stop();
       _stopTimer();
 
-      if (!mounted) return;
+      if (currentId != _analysisRequestId || !mounted) return;
 
       setState(() {
         _analysisResult = result;
@@ -178,18 +182,25 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
         _uiState = BriefCheckUiState.success;
       });
     } on BriefCheckValidationException catch (e) {
+      if (currentId != _analysisRequestId) return;
       _handleError('Validation Error', e.message, e.code);
     } on BriefCheckConcurrencyException catch (e) {
+      if (currentId != _analysisRequestId) return;
       _handleError('Local Model Busy', e.message, e.code);
     } on BriefCheckModelOfflineException catch (e) {
+      if (currentId != _analysisRequestId) return;
       _handleError('Local Ollama Offline', e.message, e.code);
     } on BriefCheckTimeoutException catch (e) {
+      if (currentId != _analysisRequestId) return;
       _handleError('Analysis Timed Out', e.message, e.code);
     } on BriefCheckAuthException catch (e) {
+      if (currentId != _analysisRequestId) return;
       _handleError('Service Authentication Error', e.message, e.code);
     } on BriefCheckNetworkException catch (e) {
+      if (currentId != _analysisRequestId) return;
       _handleError('Service Unreachable', e.message, e.code);
     } catch (e) {
+      if (currentId != _analysisRequestId) return;
       _handleError('Analysis Error', e.toString(), 'UNKNOWN');
     }
   }
@@ -205,6 +216,7 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
   }
 
   void _cancelAnalysis() {
+    _analysisRequestId++;
     _stopTimer();
     setState(() {
       _uiState = BriefCheckUiState.idle;
@@ -387,7 +399,6 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
               },
               child: const Text('Delete', style: TextStyle(color: Colors.red)),
             ),
-            const Spacer(),
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
             ElevatedButton(
               onPressed: () {
@@ -417,7 +428,7 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
       text: _extractProjectTitleCandidate(),
     );
     final budgetController = TextEditingController(
-      text: '1500',
+      text: '',
     );
 
     showDialog(
@@ -454,8 +465,8 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
               TextField(
                 controller: budgetController,
                 decoration: InputDecoration(
-                  labelText: 'Project Budget ($_defaultCurrency)',
-                  hintText: 'e.g. 1500.00',
+                  labelText: 'Project Budget ($_defaultCurrency) — optional',
+                  hintText: 'e.g. Leave blank if unstated, or enter 1500.00',
                 ),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
               ),
@@ -498,7 +509,7 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
 
               // Parse user budget into minor units (e.g. cents/kobo)
               final rawBudget = budgetController.text.trim().replaceAll(',', '');
-              final doubleVal = double.tryParse(rawBudget) ?? 1500.0;
+              final doubleVal = double.tryParse(rawBudget) ?? 0.0;
               final minorUnits = (doubleVal * 100).round();
 
               // 1. Create client
@@ -582,6 +593,153 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
       return _analysisResult!.starterScopeItems.first.title;
     }
     return 'Brand & Deliverables Scope';
+  }
+
+  Future<void> _showApprovedScopesDialog() async {
+    final scope = RepositoryScope.of(context);
+    List<Project> projects = [];
+    try {
+      projects = await scope.projectRepo.getProjects();
+    } catch (_) {
+      // Repositories might not be available in isolated tests
+    }
+
+    final approvedList = <Map<String, dynamic>>[];
+    for (final p in projects) {
+      final latest = await scope.scopeRepo.getLatestApprovedVersion(p.id);
+      if (latest != null) {
+        approvedList.add({
+          'project': p,
+          'scope': latest,
+        });
+      }
+    }
+
+    if (!mounted) return;
+
+    if (approvedList.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('No Approved Scopes Found'),
+          content: const Text(
+            'There are no approved project scopes stored in your local SQLite database yet.\n\nRun an analysis and click "Approve starting scope" to save an immutable Version 1.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reload Approved Scope'),
+        content: SizedBox(
+          width: 520,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Select a previously approved project scope from your local SQLite database to reload it into BriefCheck:',
+                style: TextStyle(fontSize: 12, color: SoloDeskColors.muted),
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: approvedList.length,
+                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  itemBuilder: (context, idx) {
+                    final item = approvedList[idx];
+                    final Project p = item['project'] as Project;
+                    final ScopeVersionWithItems v = item['scope'] as ScopeVersionWithItems;
+
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                      subtitle: Text(
+                        'Niche: ${p.niche} • Version ${v.version.versionNumber} (${v.items.length} items) • Approved: ${v.version.approvedAt?.toLocal().toString().split('.')[0] ?? 'Yes'}',
+                        style: const TextStyle(fontSize: 11, color: SoloDeskColors.muted),
+                      ),
+                      trailing: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _loadApprovedScope(p, v);
+                        },
+                        child: const Text('Load Scope', style: TextStyle(fontSize: 11)),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _loadApprovedScope(Project p, ScopeVersionWithItems v) {
+    setState(() {
+      _briefController.text =
+          '[Reloaded Scope] Project: ${p.name}\nService category: ${p.niche}\nBudget: ${p.budget.formatted}\nStatus: Approved (Version ${v.version.versionNumber})';
+      if (_userNiches.contains(p.niche)) {
+        _selectedNiche = p.niche;
+      }
+      _deliverables.clear();
+      for (final item in v.items) {
+        _deliverables.add(EditableDeliverableItem(
+          title: item.description,
+          description: '',
+          category: item.category,
+        ));
+      }
+      _analysisResult = BriefCheckResult(
+        requestId: 'reloaded-${p.id}',
+        statedRequirements: [
+          'Reloaded approved scope for "${p.name}"',
+          'Service category: ${p.niche}',
+          'Budget: ${p.budget.formatted}',
+        ],
+        assumptions: [
+          'Scope loaded from local SQLite database (Version ${v.version.versionNumber})',
+        ],
+        omissions: [],
+        suggestedQuestions: [],
+        starterScopeItems: v.items
+            .map((i) => StarterScopeDeliverable(
+                  title: i.description,
+                  description: i.category,
+                ))
+            .toList(),
+      );
+      _uiState = BriefCheckUiState.success;
+      _isApproved = true;
+      _approvedProjectTitle = p.name;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Loaded approved scope for "${p.name}" (Version ${v.version.versionNumber}).'),
+        backgroundColor: SoloDeskColors.green,
+      ),
+    );
   }
 
   Widget _buildRightPanel() {
@@ -871,27 +1029,82 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
 
           const SizedBox(height: 14),
 
-          // Goal summary card
-          if (_analysisResult != null && _analysisResult!.goalSummary.isNotEmpty) ...[
+          // Stated Requirements Card
+          if (_analysisResult != null && _analysisResult!.statedRequirements.isNotEmpty) ...[
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8F9FA),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: SoloDeskColors.borderLine),
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Extracted Client Goal:',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: SoloDeskColors.muted),
+                  const Row(
+                    children: [
+                      Icon(Icons.fact_check_outlined, size: 16, color: SoloDeskColors.primary),
+                      SizedBox(width: 6),
+                      Text(
+                        'Explicit Stated Requirements:',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: SoloDeskColors.ink),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _analysisResult!.goalSummary,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: SoloDeskColors.ink),
+                  const SizedBox(height: 8),
+                  ..._analysisResult!.statedRequirements.map((r) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2.5),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('• ', style: TextStyle(fontWeight: FontWeight.w700, color: SoloDeskColors.primary)),
+                            Expanded(
+                              child: Text(r, style: const TextStyle(fontSize: 11, color: SoloDeskColors.ink)),
+                            ),
+                          ],
+                        ),
+                      )),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+
+          // Model Assumptions Card
+          if (_analysisResult != null && _analysisResult!.assumptions.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F9FF),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFBAE6FD)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.psychology_outlined, size: 16, color: Color(0xFF0284C7)),
+                      SizedBox(width: 6),
+                      Text(
+                        'Model Assumptions (Confirm with client):',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0369A1)),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 8),
+                  ..._analysisResult!.assumptions.map((a) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2.5),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('• ', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0284C7))),
+                            Expanded(
+                              child: Text(a, style: const TextStyle(fontSize: 11, color: SoloDeskColors.ink)),
+                            ),
+                          ],
+                        ),
+                      )),
                 ],
               ),
             ),
@@ -899,8 +1112,7 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
           ],
 
           // Clarifying Questions Box
-          if (_analysisResult != null &&
-              (_analysisResult!.suggestedQuestions.isNotEmpty || _analysisResult!.omissions.isNotEmpty)) ...[
+          if (_analysisResult != null && _analysisResult!.suggestedQuestions.isNotEmpty) ...[
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -914,9 +1126,15 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'Details to confirm before quoting:',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: SoloDeskColors.ink),
+                      const Row(
+                        children: [
+                          Icon(Icons.quiz_outlined, size: 16, color: SoloDeskColors.primary),
+                          SizedBox(width: 6),
+                          Text(
+                            'Clarifying Questions to Ask Client:',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: SoloDeskColors.ink),
+                          ),
+                        ],
                       ),
                       IconButton(
                         icon: const Icon(Icons.copy, size: 14, color: SoloDeskColors.primary),
@@ -927,18 +1145,60 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   ..._analysisResult!.suggestedQuestions.map((q) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Text('• $q', style: const TextStyle(fontSize: 11, color: SoloDeskColors.ink)),
+                        padding: const EdgeInsets.symmetric(vertical: 2.5),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('• ', style: TextStyle(fontWeight: FontWeight.w700, color: SoloDeskColors.primary)),
+                            Expanded(
+                              child: Text(q, style: const TextStyle(fontSize: 11, color: SoloDeskColors.ink)),
+                            ),
+                          ],
+                        ),
                       )),
-                  if (_analysisResult!.omissions.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    ..._analysisResult!.omissions.map((o) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text('• Omission: $o', style: const TextStyle(fontSize: 11, color: SoloDeskColors.amber)),
-                        )),
-                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+
+          // Identified Omissions Box
+          if (_analysisResult != null && _analysisResult!.omissions.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFD97706)),
+                      SizedBox(width: 6),
+                      Text(
+                        'Missing Details & Omissions:',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFB45309)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ..._analysisResult!.omissions.map((o) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2.5),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('• ', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFD97706))),
+                            Expanded(
+                              child: Text(o, style: const TextStyle(fontSize: 11, color: SoloDeskColors.ink)),
+                            ),
+                          ],
+                        ),
+                      )),
                 ],
               ),
             ),
@@ -1109,6 +1369,16 @@ class _BriefCheckScreenState extends State<BriefCheckScreen> {
                 ),
               ),
               const SizedBox(width: 16),
+              OutlinedButton.icon(
+                onPressed: _showApprovedScopesDialog,
+                icon: const Icon(Icons.history_edu_outlined, size: 15),
+                label: const Text('Reload Approved Scope', style: TextStyle(fontSize: 11)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  side: const BorderSide(color: SoloDeskColors.borderLine),
+                ),
+              ),
+              const SizedBox(width: 12),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(

@@ -8,6 +8,7 @@ class StatCard extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final Color iconBgColor;
+  final VoidCallback? onTap;
 
   const StatCard({
     super.key,
@@ -17,11 +18,12 @@ class StatCard extends StatelessWidget {
     required this.icon,
     required this.iconColor,
     required this.iconBgColor,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: SoloDeskColors.surface,
@@ -81,5 +83,14 @@ class StatCard extends StatelessWidget {
         ],
       ),
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: card,
+      );
+    }
+    return card;
   }
 }

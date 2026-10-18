@@ -9,6 +9,7 @@ class InvoiceReminderClient {
   final String host;
   final int port;
   final HttpClient? _customHttpClient;
+  HttpClientRequest? _activeRequest;
 
   InvoiceReminderClient({
     this.host = '127.0.0.1',
@@ -17,6 +18,14 @@ class InvoiceReminderClient {
   }) : _customHttpClient = httpClient;
 
   Uri get invoiceReminderUri => Uri.parse('http://$host:$port/api/invoice-reminder');
+
+  /// Aborts any in-flight reminder generation HTTP request to free daemon concurrency locks
+  void cancelActiveRequest() {
+    try {
+      _activeRequest?.abort();
+    } catch (_) {}
+    _activeRequest = null;
+  }
 
   Future<InvoiceReminderResult> generateReminder({
     required String invoiceId,
@@ -78,6 +87,7 @@ class InvoiceReminderClient {
     try {
       final request = await client.postUrl(invoiceReminderUri)
           .timeout(const Duration(seconds: 15));
+      _activeRequest = request;
 
       request.headers.contentType = ContentType.json;
       if (token != null && token.isNotEmpty) {
@@ -157,6 +167,11 @@ class InvoiceReminderClient {
             requestId: requestId,
           );
       }
+    } on HttpException catch (e) {
+      if (e.message.contains('aborted') || e.message.contains('Connection closed')) {
+        throw InvoiceReminderException('Request aborted by user', code: 'ABORTED');
+      }
+      throw InvoiceReminderNetworkException('HTTP error: ${e.message}');
     } on SocketException catch (e) {
       throw InvoiceReminderNetworkException('Cannot reach local service on $host:$port: ${e.message}');
     } on HandshakeException catch (e) {
@@ -169,6 +184,7 @@ class InvoiceReminderClient {
       }
       throw InvoiceReminderException('Unexpected client error: $e');
     } finally {
+      _activeRequest = null;
       if (_customHttpClient == null) {
         client.close();
       }
